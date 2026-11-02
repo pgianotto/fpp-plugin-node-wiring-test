@@ -22,6 +22,15 @@ new network protocol, no extra daemon, nothing installed) so you can:
 - mark a node as mismatched with an optional note as you go, and export the
   resulting list as a CSV checklist for fixing wiring afterward.
 
+It can also point a camera at the prop and find the wiring errors for you:
+run an auto-scan and it flashes each node on/off, watches the camera for
+where it lights up, and fits a position mapping from the whole scan at
+once - no separate calibration step. Any node whose detected position
+disagrees with the fit gets flagged and matched to whichever other node it's
+actually sitting at, and you can download a corrected `.xmodel` (a standalone
+xLights Custom Model) with every node placed at its real physical position,
+so you can re-import it without re-wiring anything.
+
 ## How it works
 
 The whole plugin is a single PHP page (`www/index.php`) with client-side
@@ -68,13 +77,28 @@ will also be missing/different, which is the tell).
 
 - Geometric layout is only drawn for models FPP itself can resolve a 2D
   buffer for (horizontal/vertical string models, "Custom" dense/compressed
-  maps, framebuffer-style models). Everything else shows wiring order only.
+  maps, framebuffer-style models). Everything else shows wiring order only,
+  and the camera auto-scan has no geometry to calibrate against or export in
+  that case.
 - Running a test here overrides live output on the model's channels while
   active, the same as FPP's own Channel Output Testing page - don't run it
   mid-show.
 - This only drives FPP's existing test-mode output; it doesn't itself talk
   E1.31/sACN/DDP/Art-Net - FPP's configured outputs do that, same as any
   other output from this box.
+- Camera auto-scan needs a flash-and-diff with decent contrast against
+  ambient light, and assumes the camera/lighting stay put for the whole
+  scan. A camera wired directly into the FPP Pi needs its own
+  streaming/snapshot server already running (e.g. mjpg-streamer) - this
+  plugin only consumes an existing stream URL, it doesn't install or
+  configure that server (yet).
+- The corrected `.xmodel` is always exported as a generic xLights Custom
+  Model. If your original model is a built-in xLights prop type (Arches,
+  Spinner, Tree, etc.), importing it will replace that prop's native
+  appearance/behavior with a flat custom grid - it fixes the wiring, but you
+  lose the original prop type's rendering. Preserving the original prop type
+  (by patching just the node order into your existing `.xmodel`) is a
+  planned follow-up, not yet implemented.
 
 ## License
 

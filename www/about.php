@@ -40,6 +40,39 @@
                 it's the same kind of transient override as the built-in
                 Channel Output Test page.
             </p>
+            <h4>Camera auto-scan</h4>
+            <p>
+                Point a camera at the prop (this device's own camera, or a
+                stream/snapshot URL from something already serving a camera
+                on the FPP Pi, e.g. mjpg-streamer) and click <b>Run Auto
+                Scan</b>. It blanks the model, then flashes each node white
+                one at a time, diffing the camera frame before/after each
+                flash to find where it lit up. No separate calibration step
+                is needed: the whole scan's detections are fit to the
+                model's expected layout at once (a position mapping that's
+                robust to a handful of actually-miswired nodes dragging it
+                off), which both aligns the overlay and flags any node whose
+                detected position disagrees with the fit.
+            </p>
+            <p>
+                Each flagged node is matched to whichever other node's
+                expected position its camera point is actually closest to -
+                shown as "physically here instead" in the results table.
+                <b>Download corrected .xmodel</b> builds a standalone xLights
+                Custom Model with every node placed at its real detected
+                position, so you can re-import it in place of the original
+                without re-wiring anything.
+            </p>
+            <p>
+                <b>Limitations:</b> this only works for models with real 2D
+                geometry (not the plain wiring-order fallback strip), needs
+                decent, fairly even lighting/contrast between "off" and "on"
+                so the diff is clean, and assumes the camera and ambient
+                light don't move/change mid-scan. A camera physically
+                attached to the FPP Pi needs its own streaming server
+                already running (this plugin doesn't install one); it only
+                consumes an existing stream/snapshot URL.
+            </p>
         </div>
     </fieldset>
 
