@@ -1130,7 +1130,13 @@
         var name = (state.modelName || 'CorrectedModel') + '-corrected';
         var startChannel1 = layout.startChannel0 + 1;
 
-        return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        // The XML declaration is built from separate string pieces on
+        // purpose. With short_open_tag on, PHP scans the WHOLE raw file -
+        // including this JS string - for a less-than sign immediately
+        // followed by a question mark, and starts parsing PHP right there;
+        // writing the declaration as one literal broke this page with a
+        // parse error on "xml version" before this was split up.
+        return '<' + '?xml version="1.0" encoding="UTF-8"?' + '>\n' +
             '<custommodel name="' + xmlEscape(name) + '" CustomWidth="' + w + '" CustomHeight="' + h + '"' +
             ' Depth="1" StringType="' + xmlEscape(stringType) + '" Transparency="0" PixelSize="2" Antialias="1"' +
             ' StrandNames="" NodeNames="" LayoutGroup="Default"' +
