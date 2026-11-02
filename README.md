@@ -33,8 +33,9 @@ so you can re-import it without re-wiring anything.
 
 ## How it works
 
-The whole plugin is a single PHP page (`www/index.php`) with client-side
-JavaScript. It never talks to anything off the FPP box:
+The main plugin page (`www/index.php`) is PHP plus client-side JavaScript,
+and the step/chase/mismatch-log feature never talks to anything off the FPP
+box:
 
 - `GET /api/models?simple=true` to list configured models
 - `GET /api/models/{model}` to fetch the selected model's definition
@@ -43,6 +44,16 @@ JavaScript. It never talks to anything off the FPP box:
 - `POST /api/fppd/testing` with `{"enabled":0}` to stop and clear the
   override (also sent via `navigator.sendBeacon` on page unload/hide, as a
   best-effort cleanup)
+
+The optional camera auto-scan can also drive a USB camera physically
+attached to the FPP box: `api.php` exposes
+`/api/plugin/fpp-plugin-node-wiring-test/camera/{devices,start,stop,status}`,
+which detect V4L2 USB cameras (`v4l2-ctl --list-devices`) and start/stop
+`backend/camera_stream.py` - a small MJPEG-over-HTTP server that pipes the
+camera's own hardware MJPEG output through `ffmpeg -c:v copy` (no
+re-encode) and re-serves it as a standard `multipart/x-mixed-replace`
+stream any browser can display. It's started on request from the page, not
+installed as a system service, and does not start on boot.
 
 The node-to-position mapping is a JavaScript port of FPP's own
 `PixelOverlayModel` node-ordering logic
@@ -88,10 +99,13 @@ will also be missing/different, which is the tell).
   other output from this box.
 - Camera auto-scan needs a flash-and-diff with decent contrast against
   ambient light, and assumes the camera/lighting stay put for the whole
-  scan. A camera wired directly into the FPP Pi needs its own
-  streaming/snapshot server already running (e.g. mjpg-streamer) - this
-  plugin only consumes an existing stream URL, it doesn't install or
-  configure that server (yet).
+  scan.
+- The bundled Pi camera stream (`backend/camera_stream.py`) needs `ffmpeg`,
+  `python3`, and `v4l-utils` on the FPP box (declared as plugin dependencies)
+  and a USB camera FPP can see as `/dev/videoN`. It opens a port on your
+  local network (default 8091) for as long as you leave it running - stop it
+  from the page when you're done, since nothing currently times it out
+  automatically.
 - The corrected `.xmodel` is always exported as a generic xLights Custom
   Model. If your original model is a built-in xLights prop type (Arches,
   Spinner, Tree, etc.), importing it will replace that prop's native

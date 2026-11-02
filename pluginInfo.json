@@ -9,14 +9,23 @@
   "allowUpdates": 1,
   "releaseNotesStyle": "gitHistory",
   "privacy": {
-    "summary": "Runs on this device only. Lights one node at a time on a model you pick by calling FPP's own local channel-test API (POST /api/fppd/testing); nothing is sent off this device.",
-    "sends": [],
+    "summary": "Lights one node at a time on a model you pick by calling FPP's own local channel-test API. Optionally, on your command only, streams a USB camera attached to this device over your local network so a phone/tablet/laptop viewing this page can see it. Nothing is sent further than that.",
+    "sends": [
+      {
+        "to": "devices on your local network that you point at this FPP box's IP and the camera stream's port",
+        "what": "live MJPEG video from a USB camera attached to this FPP device",
+        "why": "so a phone/tablet/laptop viewing the Node Wiring Test page can see and auto-scan a camera that's physically connected to the FPP box rather than to the viewing device",
+        "alwaysOn": false
+      }
+    ],
     "collects": [],
     "sensors": [],
-    "remoteAccess": "none",
-    "systemChanges": [],
+    "remoteAccess": "lan",
+    "systemChanges": [
+      { "kind": "process", "what": "On your explicit 'Start Pi Camera' action only, starts a background process (api.php's camera/start) that runs ffmpeg against a USB camera device and serves it as MJPEG over a local HTTP port. You stop it with 'Stop Pi Camera' (or by restarting fppd); it is not installed as a system service and does not start on boot." }
+    ],
     "closedCode": false,
-    "other": "Temporarily overrides live output on the selected model's channels while a test is running/stepping, the same way FPP's built-in Channel Output Test page does. Stopping the test (or leaving the page) clears the override; nothing is written to config or persisted."
+    "other": "Temporarily overrides live output on the selected model's channels while a test is running/stepping, the same way FPP's built-in Channel Output Test page does. Stopping the test (or leaving the page) clears the override; nothing is written to FPP's configuration or persisted, aside from the camera stream's own PID/log files under media/plugindata while it's running."
   },
   "versions": [
     {
@@ -28,7 +37,7 @@
   ],
   "dependencies": {
     "plugins": [],
-    "packages": [],
+    "packages": ["python3", "ffmpeg", "v4l-utils"],
     "python": [],
     "scripts": []
   }

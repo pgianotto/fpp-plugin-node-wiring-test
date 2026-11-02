@@ -42,10 +42,12 @@
             </p>
             <h4>Camera auto-scan</h4>
             <p>
-                Point a camera at the prop (this device's own camera, or a
-                stream/snapshot URL from something already serving a camera
-                on the FPP Pi, e.g. mjpg-streamer) and click <b>Run Auto
-                Scan</b>. It blanks the model, then flashes each node white
+                Point a camera at the prop - either this device's own camera,
+                or a USB camera physically attached to the FPP box itself
+                (under "Stream/snapshot URL", <b>Detect</b> finds it and
+                <b>Start Pi Camera</b> starts streaming it right from this
+                page) - and click <b>Run Auto Scan</b>. It blanks the model,
+                then flashes each node white
                 one at a time, diffing the camera frame before/after each
                 flash to find where it lit up. No separate calibration step
                 is needed: the whole scan's detections are fit to the
@@ -68,10 +70,17 @@
                 geometry (not the plain wiring-order fallback strip), needs
                 decent, fairly even lighting/contrast between "off" and "on"
                 so the diff is clean, and assumes the camera and ambient
-                light don't move/change mid-scan. A camera physically
-                attached to the FPP Pi needs its own streaming server
-                already running (this plugin doesn't install one); it only
-                consumes an existing stream/snapshot URL.
+                light don't move/change mid-scan.
+            </p>
+            <p>
+                <b>Pi USB camera:</b> Start Pi Camera runs a small bundled
+                script (ffmpeg + a Python MJPEG server) against the USB
+                camera you picked, reachable at
+                <code>http://&lt;this device&gt;:8091/stream.mjpg</code> on
+                your local network for as long as it's running. It is not a
+                system service and does not start on boot - stop it with
+                <b>Stop Pi Camera</b> when you're done, or it'll keep running
+                (holding the camera device open) until fppd restarts.
             </p>
         </div>
     </fieldset>

@@ -127,14 +127,20 @@
         <select id="nwtCamDevice"><option value="">(default)</option></select>
         <button id="nwtCamStart" type="button">Start Camera</button>
     </div>
-    <div class="nwtRow" id="nwtCamStreamRow" style="display:none;">
-        <label for="nwtCamStreamUrl">Stream URL:</label>
-        <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8080/?action=stream" style="width:22em;">
-        <button id="nwtCamStreamStart" type="button">Load Stream</button>
-        <span class="nwtLinearNote" style="margin:0;">
-            Needs something on the Pi already serving MJPEG/snapshots at this
-            URL (e.g. mjpg-streamer) - this plugin doesn't install that yet.
-        </span>
+    <div id="nwtCamStreamRow" style="display:none;">
+        <div class="nwtRow">
+            <label for="nwtPiCamDevice">USB camera on this Pi:</label>
+            <select id="nwtPiCamDevice"><option value="">(click Detect)</option></select>
+            <button id="nwtPiCamDetect" type="button">Detect</button>
+            <button id="nwtPiCamStart" type="button" disabled>Start Pi Camera</button>
+            <button id="nwtPiCamStop" type="button" style="display:none;">Stop Pi Camera</button>
+            <span id="nwtPiCamStatus" class="nwtLinearNote" style="margin:0;"></span>
+        </div>
+        <div class="nwtRow">
+            <label for="nwtCamStreamUrl">Or a stream/snapshot URL:</label>
+            <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/stream.mjpg" style="width:22em;">
+            <button id="nwtCamStreamStart" type="button">Load Stream</button>
+        </div>
     </div>
 
     <div id="nwtCamWrap">
@@ -202,6 +208,7 @@
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
+     'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStop', 'nwtPiCamStatus',
      'nwtSettleMs', 'nwtRunScan', 'nwtCancelScan', 'nwtScanStatus', 'nwtScanResults',
      'nwtFitQuality', 'nwtScanTable', 'nwtDownloadXModel'
     ].forEach(function (id) { el[id] = document.getElementById(id); });
@@ -748,22 +755,107 @@
         });
     }
 
-    function startStreamCamera() {
-        var url = el.nwtCamStreamUrl.value.trim();
+    function startStreamCamera(urlOverride) {
+        var url = (urlOverride || el.nwtCamStreamUrl.value).trim();
         if (!url) { return; }
+        if (urlOverride) { el.nwtCamStreamUrl.value = url; }
         stopCamera();
         cam.kind = 'stream';
         el.nwtCamImg.src = url;
         el.nwtCamWrap.style.display = '';
         el.nwtCamImg.style.display = '';
         el.nwtCamVideo.style.display = 'none';
-        // Harmless for a continuous MJPEG stream, and necessary for a plain
-        // snapshot endpoint that doesn't update on its own.
-        cam.streamRefreshTimer = setInterval(function () {
-            var sep = url.indexOf('?') >= 0 ? '&' : '?';
-            el.nwtCamImg.src = url + sep + '_t=' + Date.now();
-        }, 1000);
+        // A true multipart/x-mixed-replace stream (like this plugin's own
+        // camera_stream.py, or mjpg-streamer's /?action=stream) updates the
+        // <img> on its own and needs no help; only a plain snapshot endpoint
+        // that returns one static image per request needs periodic refetching.
+        var looksLikeContinuousStream = /mjpe?g|action=stream/i.test(url);
+        if (!looksLikeContinuousStream) {
+            cam.streamRefreshTimer = setInterval(function () {
+                var sep = url.indexOf('?') >= 0 ? '&' : '?';
+                el.nwtCamImg.src = url + sep + '_t=' + Date.now();
+            }, 1000);
+        }
         updateScanButtonEnabled();
+    }
+
+    // ---- Pi-side USB camera (backend/camera_stream.py via api.php) -------
+    var NWT_API_BASE = '/api/plugin/fpp-plugin-node-wiring-test/camera/';
+
+    function piCamApi(path, opts) {
+        return fetch(NWT_API_BASE + path, opts).then(function (r) { return r.json(); });
+    }
+
+    function detectPiCameras() {
+        el.nwtPiCamStatus.textContent = 'Detecting...';
+        piCamApi('devices').then(function (data) {
+            var devices = (data && data.devices) || [];
+            if (!devices.length) {
+                el.nwtPiCamDevice.innerHTML = '<option value="">No USB cameras found</option>';
+                el.nwtPiCamStart.disabled = true;
+                el.nwtPiCamStatus.textContent = 'No USB cameras detected on this FPP device.';
+                return;
+            }
+            el.nwtPiCamDevice.innerHTML = devices.map(function (d) {
+                return '<option value="' + escapeHtml(d.device) + '">' + escapeHtml(d.device + ' - ' + d.name) + '</option>';
+            }).join('');
+            el.nwtPiCamStart.disabled = false;
+            el.nwtPiCamStatus.textContent = devices.length + ' camera(s) found.';
+        }).catch(function (err) {
+            el.nwtPiCamStatus.textContent = 'Detect failed: ' + err.message;
+        });
+    }
+
+    function startPiCamera() {
+        var device = el.nwtPiCamDevice.value;
+        if (!device) { return; }
+        el.nwtPiCamStart.disabled = true;
+        el.nwtPiCamStatus.textContent = 'Starting...';
+        piCamApi('start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device: device, port: 8091, width: 1280, height: 720, fps: 15 })
+        }).then(function (data) {
+            if (!data || data.status !== 'OK') {
+                el.nwtPiCamStatus.textContent = 'Error: ' + (data && data.message ? data.message : 'unknown');
+                el.nwtPiCamStart.disabled = false;
+                return;
+            }
+            var url = 'http://' + location.hostname + ':' + data.port + '/stream.mjpg';
+            el.nwtPiCamStatus.textContent = 'Running on port ' + data.port + '.';
+            el.nwtPiCamStart.style.display = 'none';
+            el.nwtPiCamStop.style.display = '';
+            startStreamCamera(url);
+        }).catch(function (err) {
+            el.nwtPiCamStatus.textContent = 'Start failed: ' + err.message;
+            el.nwtPiCamStart.disabled = false;
+        });
+    }
+
+    function stopPiCamera() {
+        el.nwtPiCamStatus.textContent = 'Stopping...';
+        piCamApi('stop', { method: 'POST' }).then(function () {
+            el.nwtPiCamStatus.textContent = 'Stopped.';
+            el.nwtPiCamStart.style.display = '';
+            el.nwtPiCamStart.disabled = !el.nwtPiCamDevice.value;
+            el.nwtPiCamStop.style.display = 'none';
+            stopCamera();
+            resetScanState();
+        }).catch(function (err) {
+            el.nwtPiCamStatus.textContent = 'Stop failed: ' + err.message;
+        });
+    }
+
+    // If a scan/camera session left the Pi camera running (e.g. the page was
+    // reloaded), reflect that on load rather than showing a stale Start button.
+    function checkPiCameraStatusOnLoad() {
+        piCamApi('status').catch(function () { return null; }).then(function (data) {
+            if (data && data.running && data.port) {
+                el.nwtPiCamStatus.textContent = 'Already running on port ' + data.port + ' (started earlier).';
+                el.nwtPiCamStart.style.display = 'none';
+                el.nwtPiCamStop.style.display = '';
+            }
+        });
     }
 
     // Grabs a downscaled frame from whichever source is active as raw RGBA bytes.
@@ -1205,7 +1297,13 @@
         el.nwtCamStreamRow.style.display = isStream ? '' : 'none';
     });
     el.nwtCamStart.addEventListener('click', startLocalCamera);
-    el.nwtCamStreamStart.addEventListener('click', startStreamCamera);
+    el.nwtCamStreamStart.addEventListener('click', function () { startStreamCamera(); });
+    el.nwtPiCamDetect.addEventListener('click', detectPiCameras);
+    el.nwtPiCamStart.addEventListener('click', startPiCamera);
+    el.nwtPiCamStop.addEventListener('click', stopPiCamera);
+    el.nwtPiCamDevice.addEventListener('change', function () {
+        el.nwtPiCamStart.disabled = !el.nwtPiCamDevice.value;
+    });
     el.nwtRunScan.addEventListener('click', runAutoScan);
     el.nwtCancelScan.addEventListener('click', cancelScan);
     el.nwtDownloadXModel.addEventListener('click', downloadCorrectedXModel);
@@ -1221,5 +1319,6 @@
 
     loadModels();
     renderGridPlaceholder('Select a model to begin.');
+    checkPiCameraStatusOnLoad();
 })();
 </script>
