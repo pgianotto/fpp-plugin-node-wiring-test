@@ -16,10 +16,8 @@
 .nwtInfoBox .nwtInfoLine { margin: 0.15em 0; }
 .nwtInfoBox .nwtMismatchFlag { color: #b00020; font-weight: 600; }
 #nwtGridWrap { overflow: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 1em; max-height: 480px; background: #111; }
-#nwtGrid { display: grid; gap: 2px; }
-.nwtCell { width: 16px; height: 16px; background: #333; border-radius: 2px; }
-.nwtCell.nwtCurrent { outline: 2px solid #fff; box-shadow: 0 0 6px 2px #fff; }
-.nwtCell.nwtEmpty { background: transparent; }
+#nwtGridCanvas { display: block; }
+#nwtGridPlaceholder { color: #999; padding: 1em; }
 .nwtLinearNote { color: #999; font-size: 0.85em; margin-top: -0.4em; margin-bottom: 0.6em; }
 .nwtLogTable { width: 100%; border-collapse: collapse; margin-top: 0.5em; }
 .nwtLogTable th, .nwtLogTable td { border: 1px solid #ccc; padding: 0.3em 0.5em; text-align: left; font-size: 0.9em; }
@@ -85,7 +83,10 @@
         </div>
     </div>
 
-    <div id="nwtGridWrap"><div id="nwtGrid"></div></div>
+    <div id="nwtGridWrap">
+        <canvas id="nwtGridCanvas" style="display:none;"></canvas>
+        <div id="nwtGridPlaceholder"></div>
+    </div>
     <div class="nwtLinearNote" id="nwtLinearNote" style="display:none;">
         This model's buffer is too large (or has no simple grid) to lay out
         geometrically, so nodes are shown in plain wiring order left to right
@@ -197,7 +198,7 @@
     ['nwtModel', 'nwtRefreshModels', 'nwtChannelsPerNode', 'nwtColor', 'nwtWhiteWrap', 'nwtWhite',
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
      'nwtInfoBox', 'nwtInfoModel', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
-     'nwtMarkMismatch', 'nwtMismatchNote', 'nwtGrid', 'nwtGridWrap', 'nwtLinearNote',
+     'nwtMarkMismatch', 'nwtMismatchNote', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
@@ -370,10 +371,14 @@
             nodeCount = Math.floor(channelCount / cpn);
         }
 
-        // Grid too big to render sanely (or no usable geometry) -> fall back
-        // to a plain left-to-right wiring-order strip. Node order/index is
-        // still exactly what will be commanded, just not drawn to scale.
-        if (!visualWidth || !visualHeight || visualWidth * visualHeight > 6000 || visualWidth * visualHeight <= 0) {
+        // No usable geometry (or an unreasonably huge buffer, as a safety
+        // valve) -> fall back to a plain left-to-right wiring-order strip.
+        // Node order/index is still exactly what will be commanded, just not
+        // drawn to scale. The grid itself is canvas-based (see renderGrid),
+        // so real props with tens of thousands of nodes (e.g. a big RGB
+        // matrix) still get their real layout drawn, just at a small
+        // per-cell pixel size.
+        if (!visualWidth || !visualHeight || visualWidth * visualHeight > 2000000 || visualWidth * visualHeight <= 0) {
             linear = true;
             visualWidth = nodeCount;
             visualHeight = 1;
@@ -451,46 +456,68 @@
         return { nodePos: nodePos, width: width, height: height, nodeCount: nodeCount };
     }
 
-    // ---- Grid rendering -------------------------------------------------
+    // ---- Grid rendering (canvas-based so even large real props, like a
+    // 100k+ cell RGB matrix, render at a small cell size instead of falling
+    // back to a plain strip) ------------------------------------------
+    var gridRender = null; // { layout, cell, cellByPos: {"x,y": nodeIdx} }
+    var MAX_GRID_CANVAS_W = 1000, MAX_GRID_CANVAS_H = 640;
+
     function renderGridPlaceholder(msg) {
-        el.nwtGrid.style.gridTemplateColumns = '';
-        el.nwtGrid.innerHTML = '<div style="color:#999;padding:1em;">' + escapeHtml(msg) + '</div>';
+        el.nwtGridCanvas.style.display = 'none';
+        el.nwtGridPlaceholder.style.display = '';
+        el.nwtGridPlaceholder.textContent = msg;
         el.nwtLinearNote.style.display = 'none';
+        gridRender = null;
     }
 
     function renderGrid(layout) {
         el.nwtLinearNote.style.display = layout.linear ? '' : 'none';
-        el.nwtGrid.style.gridTemplateColumns = 'repeat(' + layout.visualWidth + ', 16px)';
+        el.nwtGridPlaceholder.style.display = 'none';
+        el.nwtGridCanvas.style.display = '';
+
         var cellByPos = {};
         layout.nodePos.forEach(function (pos, idx) {
             if (pos) { cellByPos[pos.x + ',' + pos.y] = idx; }
         });
-        var frag = document.createDocumentFragment();
+
+        var cell = Math.max(1, Math.min(16, Math.floor(Math.min(
+            MAX_GRID_CANVAS_W / layout.visualWidth,
+            MAX_GRID_CANVAS_H / layout.visualHeight
+        ))));
+        el.nwtGridCanvas.width = layout.visualWidth * cell;
+        el.nwtGridCanvas.height = layout.visualHeight * cell;
+
+        gridRender = { layout: layout, cell: cell, cellByPos: cellByPos };
+        drawGridCanvas();
+    }
+
+    function drawGridCanvas() {
+        if (!gridRender) { return; }
+        var layout = gridRender.layout, cell = gridRender.cell, cellByPos = gridRender.cellByPos;
+        var ctx = el.nwtGridCanvas.getContext('2d');
+        var gap = cell > 3 ? 1 : 0;
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, el.nwtGridCanvas.width, el.nwtGridCanvas.height);
         for (var y = 0; y < layout.visualHeight; y++) {
             for (var x = 0; x < layout.visualWidth; x++) {
-                var div = document.createElement('div');
                 var nodeIdx = cellByPos[x + ',' + y];
-                div.className = 'nwtCell' + (nodeIdx === undefined ? ' nwtEmpty' : '');
-                if (nodeIdx !== undefined) {
-                    div.id = 'nwtCell_' + nodeIdx;
-                    div.title = 'Node ' + (nodeIdx + 1);
-                }
-                frag.appendChild(div);
+                if (nodeIdx === undefined) { continue; }
+                ctx.fillStyle = (nodeIdx === state.currentIndex) ? '#fff' : '#3a3a3a';
+                ctx.fillRect(x * cell, y * cell, cell - gap, cell - gap);
             }
         }
-        el.nwtGrid.innerHTML = '';
-        el.nwtGrid.appendChild(frag);
     }
 
     function highlightCurrent() {
-        var prev = el.nwtGrid.querySelector('.nwtCurrent');
-        if (prev) { prev.classList.remove('nwtCurrent'); }
-        if (state.currentIndex >= 0) {
-            var cell = document.getElementById('nwtCell_' + state.currentIndex);
-            if (cell) {
-                cell.classList.add('nwtCurrent');
-                cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-            }
+        drawGridCanvas();
+        if (!gridRender || state.currentIndex < 0) { return; }
+        var pos = gridRender.layout.nodePos[state.currentIndex];
+        if (!pos) { return; }
+        var cell = gridRender.cell;
+        var targetY = pos.y * cell;
+        var wrap = el.nwtGridWrap;
+        if (targetY < wrap.scrollTop || targetY > wrap.scrollTop + wrap.clientHeight - cell) {
+            wrap.scrollTop = Math.max(0, targetY - wrap.clientHeight / 2);
         }
     }
 
@@ -605,8 +632,8 @@
             apiPostTest({ enabled: 0 }).catch(function () {});
             state.testActive = false;
         }
-        var cell = el.nwtGrid.querySelector('.nwtCurrent');
-        if (cell) { cell.classList.remove('nwtCurrent'); }
+        state.currentIndex = -1;
+        drawGridCanvas();
         setStatus('Stopped', false);
     }
 
