@@ -40,7 +40,19 @@ def capture_loop(device, width, height, fps):
         "-c:v", "copy", "-f", "mjpeg", "pipe:1",
     ]
     while True:
-        ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # bufsize=0 is the actual fix here, not just a style choice: with the
+        # default buffering, stdout is a BufferedReader, and .read(n) on one
+        # of those loops internally doing raw reads until it has n bytes (or
+        # EOF) rather than returning as soon as anything is available. At
+        # lower bitrate (640x480/8fps) ffmpeg's write()s came in well under
+        # 65536 bytes at a time, so .read(65536) sat waiting to accumulate a
+        # full 65536 bytes across several frames - frames never reached the
+        # parser below, so latest_frame stayed None indefinitely (measured:
+        # still 0 frames after 12s). bufsize=0 makes stdout a raw, unbuffered
+        # stream whose .read(n) returns after a single underlying read(),
+        # with whatever is actually available up to n bytes - the correct
+        # mode for a live pipe, not a one-shot bulk read.
+        ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
         # A bytearray + .extend() is amortized O(1) per append; a bytes
         # object's "+=" copies the WHOLE buffer on every append, which at a
         # ~150-300KB JPEG frame read in 4KB chunks meant tens of MB of
