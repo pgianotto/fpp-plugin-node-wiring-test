@@ -1,0 +1,35 @@
+{
+  "repoName": "fpp-plugin-node-wiring-test",
+  "name": "Node Wiring Test",
+  "author": "pgianotto",
+  "description": "Pick an FPP model and step or auto-chase through it one node at a time, using FPP's own channel-test API, to visually verify wiring order against what each node's position is supposed to be. Built to catch miswired/reversed/crossed pixel strings before a show runs.",
+  "homeURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test",
+  "srcURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test.git",
+  "bugURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test/issues",
+  "allowUpdates": 1,
+  "releaseNotesStyle": "gitHistory",
+  "privacy": {
+    "summary": "Runs on this device only. Lights one node at a time on a model you pick by calling FPP's own local channel-test API (POST /api/fppd/testing); nothing is sent off this device.",
+    "sends": [],
+    "collects": [],
+    "sensors": [],
+    "remoteAccess": "none",
+    "systemChanges": [],
+    "closedCode": false,
+    "other": "Temporarily overrides live output on the selected model's channels while a test is running/stepping, the same way FPP's built-in Channel Output Test page does. Stopping the test (or leaving the page) clears the override; nothing is written to config or persisted."
+  },
+  "versions": [
+    {
+      "minFPPVersion": "8.0",
+      "maxFPPVersion": "0",
+      "branch": "master",
+      "sha": ""
+    }
+  ],
+  "dependencies": {
+    "plugins": [],
+    "packages": [],
+    "python": [],
+    "scripts": []
+  }
+}
