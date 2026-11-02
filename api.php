@@ -106,9 +106,9 @@ function nwtCameraStart() {
 
     $device = isset($body['device']) ? $body['device'] : '';
     $port = isset($body['port']) ? (int) $body['port'] : 8091;
-    $width = isset($body['width']) ? (int) $body['width'] : 1280;
-    $height = isset($body['height']) ? (int) $body['height'] : 720;
-    $fps = isset($body['fps']) ? (int) $body['fps'] : 15;
+    $width = isset($body['width']) ? (int) $body['width'] : 640;
+    $height = isset($body['height']) ? (int) $body['height'] : 480;
+    $fps = isset($body['fps']) ? (int) $body['fps'] : 8;
 
     if (!preg_match('/^\/dev\/video[0-9]+$/', $device) || !file_exists($device)) {
         return json(array('status' => 'ERROR', 'message' => 'Invalid or missing camera device.'));

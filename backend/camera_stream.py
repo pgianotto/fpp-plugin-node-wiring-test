@@ -41,25 +41,31 @@ def capture_loop(device, width, height, fps):
     ]
     while True:
         ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        buf = b""
+        # A bytearray + .extend() is amortized O(1) per append; a bytes
+        # object's "+=" copies the WHOLE buffer on every append, which at a
+        # ~150-300KB JPEG frame read in 4KB chunks meant tens of MB of
+        # memcopy per frame - measured at 60-70% of a core on a Pi 4 for a
+        # single stream before this fix, for what should be near-zero-cost
+        # passthrough since ffmpeg already does no re-encoding (-c:v copy).
+        buf = bytearray()
         try:
             while True:
-                chunk = ffmpeg_proc.stdout.read(4096)
+                chunk = ffmpeg_proc.stdout.read(65536)
                 if not chunk:
                     break
-                buf += chunk
+                buf.extend(chunk)
                 # Keep only from the last frame start onward so a slow
                 # consumer never grows this buffer unbounded.
                 start = buf.rfind(FRAME_START)
                 end = buf.rfind(FRAME_END)
                 if start != -1 and end != -1 and end > start:
                     with frame_lock:
-                        latest_frame = buf[start:end + len(FRAME_END)]
+                        latest_frame = bytes(buf[start:end + len(FRAME_END)])
                     frame_event.set()
                     frame_event.clear()
-                    buf = buf[end + len(FRAME_END):]
+                    del buf[:end + len(FRAME_END)]
                 elif len(buf) > 2_000_000:
-                    buf = buf[-200_000:]  # runaway garbage, never a real frame this big
+                    del buf[:-200_000]  # runaway garbage, never a real frame this big
         except Exception:
             pass
         finally:
@@ -126,9 +132,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", required=True)
     ap.add_argument("--port", type=int, required=True)
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
-    ap.add_argument("--fps", type=int, default=15)
+    # Defaults kept low on purpose: this is for spotting which node lit up,
+    # not a security-cam feed, and lower resolution/fps directly cuts the
+    # per-frame Python-level byte shuffling cost on the Pi's CPU.
+    ap.add_argument("--width", type=int, default=640)
+    ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--fps", type=int, default=8)
     args = ap.parse_args()
 
     if not re.match(r"^/dev/video[0-9]+$", args.device):

@@ -814,7 +814,7 @@
         piCamApi('start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device: device, port: 8091, width: 1280, height: 720, fps: 15 })
+            body: JSON.stringify({ device: device, port: 8091, width: 640, height: 480, fps: 8 })
         }).then(function (data) {
             if (!data || data.status !== 'OK') {
                 el.nwtPiCamStatus.textContent = 'Error: ' + (data && data.message ? data.message : 'unknown');
