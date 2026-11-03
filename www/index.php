@@ -154,6 +154,13 @@
         <img id="nwtCamImg" alt="camera stream" style="display:none;">
         <canvas id="nwtCamOverlay"></canvas>
     </div>
+    <div class="nwtRow" id="nwtOverlayControls" style="display:none;">
+        <label><input type="checkbox" id="nwtOverlayToggle" checked> Show model overlay on camera</label>
+        <label for="nwtOverlaySize">Size:</label>
+        <input type="range" id="nwtOverlaySize" min="20" max="400" value="100" style="width:8em;">
+        <button id="nwtOverlayReset" type="button">Reset position</button>
+        <span class="nwtLinearNote" style="margin:0;">Drag on the camera image to position the overlay over the prop.</span>
+    </div>
 
     <div class="nwtRow">
         <label for="nwtSettleMs">Settle (ms):</label>
@@ -199,9 +206,18 @@
         scanning: false,
         cancelRequested: false,
         detections: null, // array parallel to layout.nodePos: {x,y,strength}|null (normalized 0-1 camera coords)
-        fit: null,        // {a,b,c,d,e,f} affine: camX = a*ex+b*ey+c, camY = d*ex+e*ey+f
+        fit: null,        // {a,b,c,d,e,f} affine from a completed auto-scan: camX = a*ex+b*ey+c, camY = d*ex+e*ey+f
         threshold: null,  // residual distance (normalized) above which a node is flagged
-        assignment: null  // array parallel to layout.nodePos: node index (0-based) physically occupying that slot
+        assignment: null, // array parallel to layout.nodePos: node index (0-based) physically occupying that slot
+        // Manual "drag to position, slider to size" calibration, used to draw
+        // a live overlay on the camera feed before (or instead of) running a
+        // full auto-scan. centerX/centerY are normalized (0-1) camera-image
+        // coordinates for the overlay's center; pixelsPerCell is in actual
+        // camera pixels, kept uniform in x/y so the model's shape isn't
+        // distorted. null until first computed for the active layout+camera.
+        manualCalib: null,
+        liveRedrawTimer: null,
+        dragging: false
     };
     var CAM_CAPTURE_W = 160, CAM_CAPTURE_H = 120;
 
@@ -215,6 +231,7 @@
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
      'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStop', 'nwtPiCamStatus',
+     'nwtOverlayControls', 'nwtOverlayToggle', 'nwtOverlaySize', 'nwtOverlayReset',
      'nwtSettleMs', 'nwtRunScan', 'nwtCancelScan', 'nwtScanStatus', 'nwtScanResults',
      'nwtFitQuality', 'nwtScanTable', 'nwtDownloadXModel'
     ].forEach(function (id) { el[id] = document.getElementById(id); });
@@ -275,6 +292,7 @@
         stopPlayback();
         disableTest();
         resetScanState();
+        cam.manualCalib = null; // dimensions differ per model; recompute lazily for the new one
         var name = el.nwtModel.value;
         state.modelName = name || null;
         state.model = null;
@@ -284,6 +302,7 @@
         renderGridPlaceholder('Select a model to begin.');
         setControlsEnabled(false);
         updateScanButtonEnabled();
+        updateOverlayControlsVisibility();
         if (!name) { return; }
 
         apiGet('/api/models/' + encodeURIComponent(name)).then(function (model) {
@@ -296,6 +315,7 @@
             setControlsEnabled(layout.nodeCount > 0);
             setStatus('Ready (' + layout.nodeCount + ' node' + (layout.nodeCount === 1 ? '' : 's') + ')', false);
             updateScanButtonEnabled();
+            updateOverlayControlsVisibility();
         }).catch(function (err) {
             setStatus('Error loading model: ' + err.message, false);
             renderGridPlaceholder('Could not load model definition.');
@@ -595,6 +615,7 @@
         });
 
         highlightCurrent();
+        drawOverlay();
         updateInfoBox(index, absStart, absEnd);
     }
 
@@ -647,6 +668,7 @@
         }
         state.currentIndex = -1;
         drawGridCanvas();
+        drawOverlay();
         setStatus('Stopped', false);
     }
 
@@ -730,6 +752,7 @@
         el.nwtCamVideo.style.display = 'none';
         el.nwtCamImg.style.display = 'none';
         updateScanButtonEnabled();
+        updateOverlayControlsVisibility();
     }
 
     function startLocalCamera() {
@@ -748,6 +771,7 @@
             el.nwtCamVideo.style.display = '';
             el.nwtCamImg.style.display = 'none';
             updateScanButtonEnabled();
+            updateOverlayControlsVisibility();
             // Device labels are only populated after permission is granted.
             return navigator.mediaDevices.enumerateDevices();
         }).then(function (devices) {
@@ -786,6 +810,7 @@
             el.nwtCamImg.src = url + sep + '_t=' + Date.now();
         }, 400);
         updateScanButtonEnabled();
+        updateOverlayControlsVisibility();
     }
 
     // ---- Pi-side USB camera (backend/camera_stream.py via api.php) -------
@@ -1199,26 +1224,76 @@
         tbody.innerHTML = rows.join('');
     }
 
+    // Builds an affine fit (same shape as a completed auto-scan's cam.fit)
+    // from the manual drag/size calibration, so drawOverlay() can treat
+    // "calibrated by hand" and "calibrated by auto-scan" identically.
+    function manualCalibToFit(calib, layout, camW, camH) {
+        var ppc = calib.pixelsPerCell;
+        return {
+            a: ppc / camW, b: 0, c: calib.centerX - (ppc * layout.visualWidth / 2) / camW,
+            d: 0, e: ppc / camH, f: calib.centerY - (ppc * layout.visualHeight / 2) / camH
+        };
+    }
+
+    function ensureManualCalib(layout, camW, camH) {
+        if (cam.manualCalib) { return; }
+        var maxDim = Math.max(layout.visualWidth, layout.visualHeight, 1);
+        // Fit the model's longer side to ~70% of the camera frame to start.
+        var ppc = (Math.min(camW, camH) * 0.7) / maxDim;
+        cam.manualCalib = { centerX: 0.5, centerY: 0.5, pixelsPerCell: ppc };
+    }
+
+    // The fit actually used to draw/position the overlay right now: a
+    // completed auto-scan's fit is more accurate (derived from real
+    // detections) and takes priority; otherwise fall back to manual
+    // drag/size calibration so there's always something to look at.
+    function getActiveFit(layout, camW, camH) {
+        if (cam.fit) { return cam.fit; }
+        ensureManualCalib(layout, camW, camH);
+        return manualCalibToFit(cam.manualCalib, layout, camW, camH);
+    }
+
     function drawOverlay() {
         var canvas = el.nwtCamOverlay;
         var mediaEl = activeMediaEl();
-        if (!mediaEl) { return; }
+        var layout = state.layout;
+        if (!mediaEl || !layout || !el.nwtOverlayToggle.checked) {
+            if (canvas.width && canvas.height) {
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            }
+            return;
+        }
         var w = mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W;
         var h = mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H;
+        if (!w || !h) { return; }
         canvas.width = w; canvas.height = h;
         var ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, w, h);
-        if (!cam.fit || !state.layout) { return; }
-        var layout = state.layout;
+
+        var fit = getActiveFit(layout, w, h);
+        var usingScanFit = !!cam.fit;
+
         layout.nodePos.forEach(function (pos, i) {
             if (!pos) { return; }
-            var p = applyFit(cam.fit, pos.x, pos.y);
+            var p = applyFit(fit, pos.x, pos.y);
             var det = cam.detections ? cam.detections[i] : null;
-            var mismatched = det && (dist(p, det) > cam.threshold);
+            var isCurrent = i === state.currentIndex;
+            var mismatched = det && cam.threshold !== null && (dist(p, det) > cam.threshold);
+
             ctx.beginPath();
-            ctx.arc(p.x * w, p.y * h, 4, 0, Math.PI * 2);
-            ctx.fillStyle = !det ? 'rgba(180,180,180,0.6)' : (mismatched ? 'rgba(220,0,0,0.85)' : 'rgba(0,200,0,0.85)');
+            ctx.arc(p.x * w, p.y * h, isCurrent ? 7 : 3, 0, Math.PI * 2);
+            if (isCurrent) {
+                ctx.fillStyle = 'rgba(255,255,0,0.95)';
+            } else if (det) {
+                ctx.fillStyle = mismatched ? 'rgba(220,0,0,0.85)' : 'rgba(0,200,0,0.85)';
+            } else {
+                // Faint reference grid showing the model's expected shape,
+                // so the overlay can be dragged/sized to line up with the
+                // physical prop before anything has been detected.
+                ctx.fillStyle = usingScanFit ? 'rgba(180,180,180,0.5)' : 'rgba(0,160,255,0.55)';
+            }
             ctx.fill();
+
             if (det) {
                 ctx.beginPath();
                 ctx.arc(det.x * w, det.y * h, 3, 0, Math.PI * 2);
@@ -1227,6 +1302,67 @@
                 ctx.stroke();
             }
         });
+    }
+
+    function startLiveOverlayLoop() {
+        if (cam.liveRedrawTimer) { return; }
+        cam.liveRedrawTimer = setInterval(drawOverlay, 200);
+    }
+
+    function stopLiveOverlayLoop() {
+        if (cam.liveRedrawTimer) { clearInterval(cam.liveRedrawTimer); cam.liveRedrawTimer = null; }
+    }
+
+    // ---- Manual calibration: drag to move, slider to size ---------------
+    function overlayPointerPos(evt) {
+        var rect = el.nwtCamOverlay.getBoundingClientRect();
+        var clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+        var clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+        return { x: (clientX - rect.left) / rect.width, y: (clientY - rect.top) / rect.height };
+    }
+
+    function onOverlayDragStart(evt) {
+        if (!state.layout || cam.fit) { return; } // dragging only makes sense for manual calibration
+        cam.dragging = true;
+        evt.preventDefault();
+    }
+
+    function onOverlayDragMove(evt) {
+        if (!cam.dragging || !state.layout) { return; }
+        var mediaEl = activeMediaEl();
+        if (mediaEl) { ensureManualCalib(state.layout, mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W, mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H); }
+        if (!cam.manualCalib) { return; }
+        var p = overlayPointerPos(evt);
+        cam.manualCalib.centerX = Math.max(0, Math.min(1, p.x));
+        cam.manualCalib.centerY = Math.max(0, Math.min(1, p.y));
+        drawOverlay();
+    }
+
+    function onOverlayDragEnd() { cam.dragging = false; }
+
+    function onOverlaySizeChange() {
+        if (!state.layout) { return; }
+        var mediaEl = activeMediaEl();
+        var w = mediaEl ? (mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W) : CAM_CAPTURE_W;
+        var h = mediaEl ? (mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H) : CAM_CAPTURE_H;
+        ensureManualCalib(state.layout, w, h);
+        // Slider is a 20-400 "percent of the default auto-fit size" control.
+        var maxDim = Math.max(state.layout.visualWidth, state.layout.visualHeight, 1);
+        var basePpc = (Math.min(w, h) * 0.7) / maxDim;
+        cam.manualCalib.pixelsPerCell = basePpc * (parseInt(el.nwtOverlaySize.value, 10) / 100);
+        drawOverlay();
+    }
+
+    function resetOverlayCalibration() {
+        cam.manualCalib = null;
+        el.nwtOverlaySize.value = 100;
+        drawOverlay();
+    }
+
+    function updateOverlayControlsVisibility() {
+        var show = !!(cam.kind && state.layout && state.layout.nodeCount > 0);
+        el.nwtOverlayControls.style.display = show ? '' : 'none';
+        if (show) { startLiveOverlayLoop(); } else { stopLiveOverlayLoop(); }
     }
 
     // ---- .xmodel export ---------------------------------------------
@@ -1323,6 +1459,18 @@
     el.nwtCancelScan.addEventListener('click', cancelScan);
     el.nwtDownloadXModel.addEventListener('click', downloadCorrectedXModel);
     el.nwtCamVideo.addEventListener('loadedmetadata', drawOverlay);
+
+    el.nwtOverlayToggle.addEventListener('change', drawOverlay);
+    el.nwtOverlaySize.addEventListener('input', onOverlaySizeChange);
+    el.nwtOverlayReset.addEventListener('click', resetOverlayCalibration);
+    el.nwtCamOverlay.style.pointerEvents = 'auto';
+    el.nwtCamOverlay.style.cursor = 'grab';
+    el.nwtCamOverlay.addEventListener('mousedown', onOverlayDragStart);
+    el.nwtCamOverlay.addEventListener('mousemove', onOverlayDragMove);
+    window.addEventListener('mouseup', onOverlayDragEnd);
+    el.nwtCamOverlay.addEventListener('touchstart', onOverlayDragStart, { passive: false });
+    el.nwtCamOverlay.addEventListener('touchmove', onOverlayDragMove, { passive: false });
+    el.nwtCamOverlay.addEventListener('touchend', onOverlayDragEnd);
 
     window.addEventListener('beforeunload', function () {
         stopTestBestEffort();

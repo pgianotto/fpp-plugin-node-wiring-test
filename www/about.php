@@ -40,6 +40,23 @@
                 it's the same kind of transient override as the built-in
                 Channel Output Test page.
             </p>
+            <h4>Live camera overlay</h4>
+            <p>
+                Whenever a camera and a model are both active, the camera view
+                shows a live overlay of the model's shape right on top of the
+                video - a blue reference grid by default. Drag on the camera
+                image to position it over the real prop, and use the
+                <b>Size</b> slider to scale it to match; <b>Reset position</b>
+                starts over. As you step or play through nodes, the node
+                currently commanded shows up highlighted in yellow on the
+                overlay, in its expected position - so you can watch the
+                physical prop and the overlay side by side and see at a
+                glance whether they agree, without running a full scan.
+                Once an auto-scan has completed, the overlay switches to the
+                scan's own (usually more accurate) calibration automatically,
+                with detected nodes shown in green (matches) or red
+                (mismatches) instead of the plain reference grid.
+            </p>
             <h4>Camera auto-scan</h4>
             <p>
                 Point a camera at the prop - either this device's own camera,

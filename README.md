@@ -22,14 +22,23 @@ new network protocol, no extra daemon, nothing installed) so you can:
 - mark a node as mismatched with an optional note as you go, and export the
   resulting list as a CSV checklist for fixing wiring afterward.
 
-It can also point a camera at the prop and find the wiring errors for you:
-run an auto-scan and it flashes each node on/off, watches the camera for
-where it lights up, and fits a position mapping from the whole scan at
-once - no separate calibration step. Any node whose detected position
-disagrees with the fit gets flagged and matched to whichever other node it's
-actually sitting at, and you can download a corrected `.xmodel` (a standalone
-xLights Custom Model) with every node placed at its real physical position,
-so you can re-import it without re-wiring anything.
+Point a camera at the prop (this device's own, or one physically attached to
+the FPP Pi) and the live video gets a live overlay of the model's shape right
+on top of it - drag to position it, a slider to size it, and the node
+currently being stepped/played highlights on the overlay in its expected
+position, so you can watch the real prop and the overlay side by side and
+see mismatches with your own eyes, no scan required.
+
+It can also find the wiring errors for you automatically: run an auto-scan
+and it flashes each node on/off, watches the camera for where it lights up,
+and fits a position mapping from the whole scan at once - no separate
+calibration step (this is also what the live overlay switches to once a scan
+completes, instead of the plain manually-positioned reference grid). Any
+node whose detected position disagrees with the fit gets flagged and matched
+to whichever other node it's actually sitting at, and you can download a
+corrected `.xmodel` (a standalone xLights Custom Model) with every node
+placed at its real physical position, so you can re-import it without
+re-wiring anything.
 
 ## How it works
 
