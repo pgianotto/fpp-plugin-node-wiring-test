@@ -738,7 +738,7 @@
             cam.kind = 'local';
             cam.stream = stream;
             el.nwtCamVideo.srcObject = stream;
-            el.nwtCamWrap.style.display = '';
+            el.nwtCamWrap.style.display = 'block';
             el.nwtCamVideo.style.display = '';
             el.nwtCamImg.style.display = 'none';
             updateScanButtonEnabled();
@@ -762,7 +762,7 @@
         stopCamera();
         cam.kind = 'stream';
         el.nwtCamImg.src = url;
-        el.nwtCamWrap.style.display = '';
+        el.nwtCamWrap.style.display = 'block';
         el.nwtCamImg.style.display = '';
         el.nwtCamVideo.style.display = 'none';
         // A true multipart/x-mixed-replace stream (like this plugin's own
