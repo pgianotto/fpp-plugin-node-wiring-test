@@ -17,6 +17,7 @@ function getEndpointsfpppluginnodewiringtest() {
     $result[] = array('method' => 'GET', 'endpoint' => 'camera/status', 'callback' => 'nwtCameraStatus');
     $result[] = array('method' => 'POST', 'endpoint' => 'camera/start', 'callback' => 'nwtCameraStart');
     $result[] = array('method' => 'POST', 'endpoint' => 'camera/stop', 'callback' => 'nwtCameraStop');
+    $result[] = array('method' => 'GET', 'endpoint' => 'camera/frame', 'callback' => 'nwtCameraFrame');
 
     return $result;
 }
@@ -171,5 +172,40 @@ function nwtCameraStop() {
     usleep(300000);
     @unlink(nwtPidFile());
     return json(array('status' => 'OK', 'running' => false));
+}
+
+// GET /api/plugin/fpp-plugin-node-wiring-test/camera/frame
+//
+// Proxies one JPEG frame from the locally-running camera_stream.py. The
+// page polls THIS same-origin endpoint rather than fetching
+// http://<device>:<port>/snapshot.jpg directly, because FPP's own Apache
+// Content-Security-Policy (img-src 'self') blocks an <img> from loading a
+// different port on the same host - confirmed live (FPP-Mickey): the
+// browser console reported exactly that CSP violation against the direct
+// port-8091 URL, even though the endpoint itself served a valid image.
+// Fetching it server-side here and re-serving it under the page's own
+// origin sidesteps that without touching Apache's CSP config at all.
+function nwtCameraFrame() {
+    $infoFile = nwtDataDir() . '/camera_stream.json';
+    $pid = nwtRunningPid();
+    if ($pid === null || !file_exists($infoFile)) {
+        http_response_code(503);
+        return '';
+    }
+    $info = json_decode(file_get_contents($infoFile), true);
+    $port = (is_array($info) && isset($info['port'])) ? (int) $info['port'] : 0;
+    if ($port <= 0) {
+        http_response_code(503);
+        return '';
+    }
+    $ctx = stream_context_create(array('http' => array('timeout' => 2)));
+    $data = @file_get_contents('http://127.0.0.1:' . $port . '/snapshot.jpg', false, $ctx);
+    if ($data === false) {
+        http_response_code(503);
+        return '';
+    }
+    send_header('Content-Type: image/jpeg');
+    send_header('Cache-Control: no-store');
+    return $data;
 }
 ?>

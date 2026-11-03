@@ -141,6 +141,12 @@
             <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
             <button id="nwtCamStreamStart" type="button">Load Stream</button>
         </div>
+        <div class="nwtLinearNote">
+            A manually-entered URL on a different host/port than this page
+            may be blocked by FPP's own Content-Security-Policy (images only
+            load from the same origin by default) - "Start Pi Camera" above
+            avoids this by proxying through this page's own origin instead.
+        </div>
     </div>
 
     <div id="nwtCamWrap">
@@ -824,11 +830,13 @@
                 el.nwtPiCamStart.disabled = false;
                 return;
             }
-            // /snapshot.jpg, not /stream.mjpg: startStreamCamera() polls by
-            // re-fetching this URL on an interval rather than relying on
-            // native multipart/x-mixed-replace rendering, so a plain
-            // single-JPEG-per-request endpoint is what it actually wants.
-            var url = 'http://' + location.hostname + ':' + data.port + '/snapshot.jpg';
+            // The plugin's own same-origin proxy (camera/frame), NOT the
+            // camera_stream.py port directly: FPP's Apache CSP (img-src
+            // 'self') blocks an <img> loading from a different port on the
+            // same host, confirmed live against the direct port-8091 URL.
+            // api.php's camera/frame fetches that URL server-side and
+            // re-serves it under the page's own origin instead.
+            var url = NWT_API_BASE + 'frame';
             el.nwtPiCamStatus.textContent = 'Running on port ' + data.port + '.';
             el.nwtPiCamStart.style.display = 'none';
             el.nwtPiCamStop.style.display = '';
