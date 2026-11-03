@@ -32,17 +32,20 @@
 .nwtRowUnknown { background: #f5f5f5; color: #888; }
 #nwtFitQuality.nwtFitPoor { color: #b00020; font-weight: 600; }
 #nwtFitQuality.nwtFitGood { color: #0a7d2c; font-weight: 600; }
+.nwtApp h3 { margin: 1.4em 0 0.4em; border-top: 1px solid #e5e5e5; padding-top: 0.8em; }
+.nwtApp h3:first-of-type { border-top: none; padding-top: 0; }
+.nwtApp details { margin: 0.6em 0; }
+.nwtApp details > summary { cursor: pointer; font-weight: 600; color: #555; }
+.nwtApp details[open] > summary { margin-bottom: 0.6em; }
+#nwtPreviewWrap { margin-bottom: 0.8em; }
 </style>
 
 <div class="nwtApp">
     <h2>Node Wiring Test</h2>
     <p class="nwtNote">
-        Picks one model, then commands FPP's own channel-test engine
-        (the same one behind Channel Output Testing) to light exactly one
-        node's channels at a time, in the model's real wiring order. Watch
-        the prop and confirm the lit node matches the position/index shown
-        here; log anything that doesn't match. Leaving this page or clicking
-        Stop turns the test off and clears the channels.
+        Pick a model, point a camera at it if you have one, then step through
+        its nodes (or run an auto-scan) and watch the one preview below to
+        catch wiring mistakes.
     </p>
 
     <div class="nwtRow">
@@ -51,78 +54,21 @@
         <button id="nwtRefreshModels" type="button" title="Reload model list">&#x21bb;</button>
     </div>
 
-    <div class="nwtRow">
-        <label for="nwtChannelsPerNode">Channels/node:</label>
-        <input type="number" id="nwtChannelsPerNode" min="1" max="32" value="3" style="width:4em;">
-        <label for="nwtColor">Color:</label>
-        <input type="color" id="nwtColor" value="#ffffff">
-        <span id="nwtWhiteWrap" style="display:none;">
-            <label for="nwtWhite">White:</label>
-            <input type="range" id="nwtWhite" min="0" max="255" value="255" style="width:6em;">
-        </span>
-        <label for="nwtIntervalMs">Interval (ms):</label>
-        <input type="number" id="nwtIntervalMs" min="100" max="10000" step="100" value="750" style="width:5.5em;">
-    </div>
-
-    <div class="nwtRow">
-        <button id="nwtPrev" type="button" disabled>&#9664;&#9664; Prev</button>
-        <button id="nwtPlay" type="button" disabled>&#9654; Play</button>
-        <button id="nwtNext" type="button" disabled>Next &#9654;&#9654;</button>
-        <button id="nwtStop" type="button" disabled>&#9632; Stop</button>
-        <span class="nwtStatus" id="nwtStatus">Idle</span>
-    </div>
-
-    <div class="nwtInfoBox" id="nwtInfoBox" style="display:none;">
-        <div class="nwtInfoLine"><b>Model:</b> <span id="nwtInfoModel"></span></div>
-        <div class="nwtInfoLine"><b>Node:</b> <span id="nwtInfoNode"></span></div>
-        <div class="nwtInfoLine"><b>Expected buffer position:</b> <span id="nwtInfoPos"></span></div>
-        <div class="nwtInfoLine"><b>Absolute channels being driven:</b> <span id="nwtInfoChannels"></span></div>
-        <div class="nwtInfoLine">
-            <button id="nwtMarkMismatch" type="button">Mark this node as mismatched</button>
-            <input type="text" id="nwtMismatchNote" placeholder="optional note (e.g. 'lit where node 12 should be')" style="width:22em;">
-        </div>
-    </div>
-
-    <div id="nwtGridWrap">
-        <canvas id="nwtGridCanvas" style="display:none;"></canvas>
-        <div id="nwtGridPlaceholder"></div>
-    </div>
-    <div class="nwtLinearNote" id="nwtLinearNote" style="display:none;">
-        This model's buffer is too large (or has no simple grid) to lay out
-        geometrically, so nodes are shown in plain wiring order left to right
-        instead of their real physical layout. Node order/index is still
-        accurate for diagnosing wiring problems.
-    </div>
-
-    <h3>Mismatch log</h3>
-    <div class="nwtRow">
-        <button id="nwtExportLog" type="button">Export log (CSV)</button>
-        <button id="nwtClearLog" type="button">Clear log</button>
-    </div>
-    <table class="nwtLogTable" id="nwtLogTable">
-        <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Note</th></tr></thead>
-        <tbody></tbody>
-    </table>
-
-    <h3>Camera auto-scan (experimental)</h3>
+    <h3>Camera (optional)</h3>
     <p class="nwtNote">
-        Point a camera at the physical prop, then run an auto-scan: it flashes
-        each node on/off in order and watches for it in the camera image. No
-        manual calibration step is needed - the scan itself fits a position
-        mapping from every node it detects, flags any node whose detected
-        position doesn't match where it was expected, and can build a
-        corrected <code>.xmodel</code> that places each node at its real
-        physical position without re-wiring anything.
+        Lets the preview below show the node highlighted right on top of the
+        real prop, and enables the auto-scan. Skip this to just use the
+        plain layout preview and step through nodes by eye.
     </p>
-
     <div class="nwtRow">
-        <label for="nwtCamSource">Camera source:</label>
+        <label for="nwtCamSource">Camera:</label>
         <select id="nwtCamSource">
+            <option value="" selected>None - just show the layout</option>
             <option value="local">This device's camera (phone/tablet/laptop)</option>
-            <option value="stream">Stream/snapshot URL (e.g. USB camera on the FPP Pi)</option>
+            <option value="stream">A camera on the FPP Pi</option>
         </select>
     </div>
-    <div class="nwtRow" id="nwtCamLocalRow">
+    <div class="nwtRow" id="nwtCamLocalRow" style="display:none;">
         <label for="nwtCamDevice">Camera:</label>
         <select id="nwtCamDevice"><option value="">(default)</option></select>
         <button id="nwtCamStart" type="button">Start Camera</button>
@@ -136,32 +82,74 @@
             <button id="nwtPiCamStop" type="button" style="display:none;">Stop Pi Camera</button>
             <span id="nwtPiCamStatus" class="nwtLinearNote" style="margin:0;"></span>
         </div>
-        <div class="nwtRow">
-            <label for="nwtCamStreamUrl">Or a stream/snapshot URL:</label>
-            <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
-            <button id="nwtCamStreamStart" type="button">Load Stream</button>
+        <details>
+            <summary>Use a stream/snapshot URL instead</summary>
+            <div class="nwtRow">
+                <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
+                <button id="nwtCamStreamStart" type="button">Load Stream</button>
+            </div>
+            <div class="nwtLinearNote">
+                A URL on a different host/port than this page may be blocked
+                by FPP's own Content-Security-Policy - "Start Pi Camera"
+                above avoids this by proxying through this page's own origin.
+            </div>
+        </details>
+    </div>
+
+    <h3>Preview</h3>
+    <div id="nwtPreviewWrap">
+        <div id="nwtGridWrap">
+            <canvas id="nwtGridCanvas" style="display:none;"></canvas>
+            <div id="nwtGridPlaceholder"></div>
         </div>
-        <div class="nwtLinearNote">
-            A manually-entered URL on a different host/port than this page
-            may be blocked by FPP's own Content-Security-Policy (images only
-            load from the same origin by default) - "Start Pi Camera" above
-            avoids this by proxying through this page's own origin instead.
+        <div id="nwtCamWrap">
+            <video id="nwtCamVideo" autoplay playsinline muted></video>
+            <img id="nwtCamImg" alt="camera stream" style="display:none;">
+            <canvas id="nwtCamOverlay"></canvas>
+        </div>
+        <div class="nwtRow" id="nwtOverlayControls" style="display:none;">
+            <label><input type="checkbox" id="nwtOverlayToggle" checked> Show model overlay</label>
+            <label for="nwtOverlaySize">Size:</label>
+            <input type="range" id="nwtOverlaySize" min="20" max="400" value="100" style="width:8em;">
+            <button id="nwtOverlayReset" type="button">Reset position</button>
+            <span class="nwtLinearNote" style="margin:0;">Drag the image to position the overlay over the prop.</span>
+        </div>
+        <div class="nwtLinearNote" id="nwtLinearNote" style="display:none;">
+            This model's buffer is too large (or has no simple grid) to lay
+            out geometrically, so nodes are shown in plain wiring order
+            instead. Node order/index is still accurate.
         </div>
     </div>
 
-    <div id="nwtCamWrap">
-        <video id="nwtCamVideo" autoplay playsinline muted></video>
-        <img id="nwtCamImg" alt="camera stream" style="display:none;">
-        <canvas id="nwtCamOverlay"></canvas>
-    </div>
-    <div class="nwtRow" id="nwtOverlayControls" style="display:none;">
-        <label><input type="checkbox" id="nwtOverlayToggle" checked> Show model overlay on camera</label>
-        <label for="nwtOverlaySize">Size:</label>
-        <input type="range" id="nwtOverlaySize" min="20" max="400" value="100" style="width:8em;">
-        <button id="nwtOverlayReset" type="button">Reset position</button>
-        <span class="nwtLinearNote" style="margin:0;">Drag on the camera image to position the overlay over the prop.</span>
+    <h3>Step through nodes</h3>
+    <div class="nwtRow">
+        <button id="nwtPrev" type="button" disabled>&#9664;&#9664; Prev</button>
+        <button id="nwtPlay" type="button" disabled>&#9654; Play</button>
+        <button id="nwtNext" type="button" disabled>Next &#9654;&#9654;</button>
+        <button id="nwtStop" type="button" disabled>&#9632; Stop</button>
+        <label for="nwtIntervalMs">Interval (ms):</label>
+        <input type="number" id="nwtIntervalMs" min="100" max="10000" step="100" value="750" style="width:5.5em;">
+        <span class="nwtStatus" id="nwtStatus">Idle</span>
     </div>
 
+    <div class="nwtInfoBox" id="nwtInfoBox" style="display:none;">
+        <div class="nwtInfoLine"><b>Node:</b> <span id="nwtInfoNode"></span></div>
+        <div class="nwtInfoLine"><b>Expected buffer position:</b> <span id="nwtInfoPos"></span></div>
+        <div class="nwtInfoLine"><b>Absolute channels being driven:</b> <span id="nwtInfoChannels"></span></div>
+        <div class="nwtInfoLine">
+            <button id="nwtMarkMismatch" type="button">Mark this node as mismatched</button>
+            <input type="text" id="nwtMismatchNote" placeholder="optional note" style="width:18em;">
+        </div>
+    </div>
+
+    <h3>Auto-scan</h3>
+    <p class="nwtNote">
+        Needs a camera above. Flashes each node on/off in order and watches
+        for it in the camera image - no manual calibration needed - then
+        flags any node whose detected position doesn't match where it was
+        expected, and can build a corrected <code>.xmodel</code> that places
+        each node at its real physical position without re-wiring anything.
+    </p>
     <div class="nwtRow">
         <label for="nwtSettleMs">Settle (ms):</label>
         <input type="number" id="nwtSettleMs" value="220" min="50" max="3000" step="10" style="width:5.5em;">
@@ -180,6 +168,33 @@
             <tbody></tbody>
         </table>
     </div>
+
+    <details>
+        <summary>Advanced node settings</summary>
+        <div class="nwtRow">
+            <label for="nwtChannelsPerNode">Channels/node:</label>
+            <input type="number" id="nwtChannelsPerNode" min="1" max="32" value="3" style="width:4em;">
+            <label for="nwtColor">Color:</label>
+            <input type="color" id="nwtColor" value="#ffffff">
+            <span id="nwtWhiteWrap" style="display:none;">
+                <label for="nwtWhite">White:</label>
+                <input type="range" id="nwtWhite" min="0" max="255" value="255" style="width:6em;">
+            </span>
+        </div>
+    </details>
+
+    <details>
+        <summary>Manual mismatch log</summary>
+        <p class="nwtNote">For noting mismatches by eye while stepping, without running a camera scan.</p>
+        <div class="nwtRow">
+            <button id="nwtExportLog" type="button">Export log (CSV)</button>
+            <button id="nwtClearLog" type="button">Clear log</button>
+        </div>
+        <table class="nwtLogTable" id="nwtLogTable">
+            <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Note</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </details>
 </div>
 
 <script>
@@ -247,7 +262,7 @@
     var el = {};
     ['nwtModel', 'nwtRefreshModels', 'nwtChannelsPerNode', 'nwtColor', 'nwtWhiteWrap', 'nwtWhite',
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
-     'nwtInfoBox', 'nwtInfoModel', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
+     'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
@@ -644,7 +659,6 @@
     function updateInfoBox(index, absStart, absEnd) {
         var layout = state.layout;
         el.nwtInfoBox.style.display = '';
-        el.nwtInfoModel.textContent = state.modelName;
         el.nwtInfoNode.textContent = (index + 1) + ' of ' + layout.nodeCount;
         var pos = layout.nodePos[index];
         el.nwtInfoPos.textContent = (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : '(wiring order #' + (index + 1) + ')';
@@ -763,6 +777,17 @@
         el.nwtRunScan.disabled = !ready;
     }
 
+    // One preview area, not two: the plain layout grid and the camera+overlay
+    // show the same information (where nodes are, which one is current), so
+    // only one is ever visible - the grid when there's no camera, the camera
+    // once one is active - rather than a confusing duplicate "model preview"
+    // and "scan preview".
+    function updatePreviewMode() {
+        var showCamera = !!cam.kind;
+        el.nwtGridWrap.style.display = showCamera ? 'none' : '';
+        el.nwtCamWrap.style.display = showCamera ? 'block' : 'none';
+    }
+
     function stopCamera() {
         if (cam.streamRefreshTimer) { clearInterval(cam.streamRefreshTimer); cam.streamRefreshTimer = null; }
         if (cam.stream) {
@@ -770,9 +795,9 @@
             cam.stream = null;
         }
         cam.kind = null;
-        el.nwtCamWrap.style.display = 'none';
         el.nwtCamVideo.style.display = 'none';
         el.nwtCamImg.style.display = 'none';
+        updatePreviewMode();
         updateScanButtonEnabled();
         updateOverlayControlsVisibility();
     }
@@ -789,7 +814,7 @@
             cam.kind = 'local';
             cam.stream = stream;
             el.nwtCamVideo.srcObject = stream;
-            el.nwtCamWrap.style.display = 'block';
+            updatePreviewMode();
             el.nwtCamVideo.style.display = '';
             el.nwtCamImg.style.display = 'none';
             updateScanButtonEnabled();
@@ -813,7 +838,7 @@
         if (urlOverride) { el.nwtCamStreamUrl.value = url; }
         stopCamera();
         cam.kind = 'stream';
-        el.nwtCamWrap.style.display = 'block';
+        updatePreviewMode();
         el.nwtCamImg.style.display = '';
         el.nwtCamVideo.style.display = 'none';
         // Always poll by periodically re-fetching the URL, rather than
@@ -1494,9 +1519,9 @@
     el.nwtCamSource.addEventListener('change', function () {
         stopCamera();
         resetScanState();
-        var isStream = el.nwtCamSource.value === 'stream';
-        el.nwtCamLocalRow.style.display = isStream ? 'none' : '';
-        el.nwtCamStreamRow.style.display = isStream ? '' : 'none';
+        var mode = el.nwtCamSource.value; // '' | 'local' | 'stream'
+        el.nwtCamLocalRow.style.display = (mode === 'local') ? '' : 'none';
+        el.nwtCamStreamRow.style.display = (mode === 'stream') ? '' : 'none';
     });
     el.nwtCamStart.addEventListener('click', startLocalCamera);
     el.nwtCamStreamStart.addEventListener('click', function () { startStreamCamera(); });
@@ -1533,6 +1558,7 @@
 
     loadModels();
     renderGridPlaceholder('Select a model to begin.');
+    updatePreviewMode();
     checkPiCameraStatusOnLoad();
 })();
 </script>
