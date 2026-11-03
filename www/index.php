@@ -138,7 +138,7 @@
         </div>
         <div class="nwtRow">
             <label for="nwtCamStreamUrl">Or a stream/snapshot URL:</label>
-            <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/stream.mjpg" style="width:22em;">
+            <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
             <button id="nwtCamStreamStart" type="button">Load Stream</button>
         </div>
     </div>
@@ -761,21 +761,24 @@
         if (urlOverride) { el.nwtCamStreamUrl.value = url; }
         stopCamera();
         cam.kind = 'stream';
-        el.nwtCamImg.src = url;
         el.nwtCamWrap.style.display = 'block';
         el.nwtCamImg.style.display = '';
         el.nwtCamVideo.style.display = 'none';
-        // A true multipart/x-mixed-replace stream (like this plugin's own
-        // camera_stream.py, or mjpg-streamer's /?action=stream) updates the
-        // <img> on its own and needs no help; only a plain snapshot endpoint
-        // that returns one static image per request needs periodic refetching.
-        var looksLikeContinuousStream = /mjpe?g|action=stream/i.test(url);
-        if (!looksLikeContinuousStream) {
-            cam.streamRefreshTimer = setInterval(function () {
-                var sep = url.indexOf('?') >= 0 ? '&' : '?';
-                el.nwtCamImg.src = url + sep + '_t=' + Date.now();
-            }, 1000);
-        }
+        // Always poll by periodically re-fetching the URL, rather than
+        // relying on the browser natively rendering a continuous
+        // multipart/x-mixed-replace stream in an <img> - Chrome (and other
+        // browsers at various points) has unreliable-to-nonexistent support
+        // for that in <img>, which is a well-known problem for mjpg-streamer
+        // users too: confirmed here against this plugin's own /stream.mjpg
+        // (naturalWidth/naturalHeight stayed 0 despite the endpoint itself
+        // serving valid JPEG data, verified separately via direct fetch).
+        // Re-fetching a single frame every ~400ms is plenty for watching
+        // discrete node flashes, and works identically everywhere.
+        var sep = url.indexOf('?') >= 0 ? '&' : '?';
+        el.nwtCamImg.src = url + sep + '_t=' + Date.now();
+        cam.streamRefreshTimer = setInterval(function () {
+            el.nwtCamImg.src = url + sep + '_t=' + Date.now();
+        }, 400);
         updateScanButtonEnabled();
     }
 
@@ -821,7 +824,11 @@
                 el.nwtPiCamStart.disabled = false;
                 return;
             }
-            var url = 'http://' + location.hostname + ':' + data.port + '/stream.mjpg';
+            // /snapshot.jpg, not /stream.mjpg: startStreamCamera() polls by
+            // re-fetching this URL on an interval rather than relying on
+            // native multipart/x-mixed-replace rendering, so a plain
+            // single-JPEG-per-request endpoint is what it actually wants.
+            var url = 'http://' + location.hostname + ':' + data.port + '/snapshot.jpg';
             el.nwtPiCamStatus.textContent = 'Running on port ' + data.port + '.';
             el.nwtPiCamStart.style.display = 'none';
             el.nwtPiCamStop.style.display = '';

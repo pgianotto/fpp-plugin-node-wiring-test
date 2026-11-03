@@ -76,11 +76,19 @@
                 <b>Pi USB camera:</b> Start Pi Camera runs a small bundled
                 script (ffmpeg + a Python MJPEG server) against the USB
                 camera you picked, reachable at
-                <code>http://&lt;this device&gt;:8091/stream.mjpg</code> on
-                your local network for as long as it's running. It is not a
-                system service and does not start on boot - stop it with
-                <b>Stop Pi Camera</b> when you're done, or it'll keep running
-                (holding the camera device open) until fppd restarts.
+                <code>http://&lt;this device&gt;:8091/snapshot.jpg</code>
+                (and as a continuous stream at <code>/stream.mjpg</code>, for
+                tools that read it directly) on your local network for as
+                long as it's running. The page itself polls
+                <code>/snapshot.jpg</code> every ~400ms rather than embedding
+                the stream directly - Chrome (and others, at various points)
+                doesn't reliably render a continuous MJPEG stream in an
+                &lt;img&gt; tag, a known issue for mjpg-streamer users too; a
+                plain single-image endpoint, polled, works everywhere. It is
+                not a system service and does not start on boot - stop it
+                with <b>Stop Pi Camera</b> when you're done, or it'll keep
+                running (holding the camera device open) until fppd
+                restarts.
             </p>
         </div>
     </fieldset>

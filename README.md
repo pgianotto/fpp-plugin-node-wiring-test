@@ -51,9 +51,15 @@ attached to the FPP box: `api.php` exposes
 which detect V4L2 USB cameras (`v4l2-ctl --list-devices`) and start/stop
 `backend/camera_stream.py` - a small MJPEG-over-HTTP server that pipes the
 camera's own hardware MJPEG output through `ffmpeg -c:v copy` (no
-re-encode) and re-serves it as a standard `multipart/x-mixed-replace`
-stream any browser can display. It's started on request from the page, not
-installed as a system service, and does not start on boot.
+re-encode) and serves both a continuous `multipart/x-mixed-replace` stream
+(`/stream.mjpg`) and a plain single-JPEG endpoint (`/snapshot.jpg`). The
+page itself polls `/snapshot.jpg` on an interval rather than embedding
+`/stream.mjpg` directly - Chrome (and others, at various points) doesn't
+reliably render a continuous MJPEG stream in an `<img>`, the same
+long-standing issue mjpg-streamer users hit, confirmed here against this
+plugin's own stream before switching to polling. It's started on request
+from the page, not installed as a system service, and does not start on
+boot.
 
 The node-to-position mapping is a JavaScript port of FPP's own
 `PixelOverlayModel` node-ordering logic
