@@ -217,9 +217,31 @@
         // distorted. null until first computed for the active layout+camera.
         manualCalib: null,
         liveRedrawTimer: null,
-        dragging: false
+        dragging: false,
+        // Last known-good camera frame dimensions, used so a momentary 0
+        // read (see getCamDimensionsFrom()) can't make the overlay flicker.
+        lastCamW: null,
+        lastCamH: null
     };
     var CAM_CAPTURE_W = 160, CAM_CAPTURE_H = 120;
+
+    // mediaEl.naturalWidth/Height (for the <img> source) briefly reads 0
+    // while a new frame is loading - we reassign img.src every ~400ms to
+    // poll for live frames, and the ~200ms overlay redraw timer sometimes
+    // lands in that gap. Falling back to the hardcoded CAM_CAPTURE_W/H
+    // (160x120, meant only for the scan's own downsampled analysis buffer)
+    // on those ticks made the live overlay's affine fit swing between two
+    // very different scales every other redraw - visible as a rapid
+    // flicker between a huge and a tiny overlay, confirmed live via a
+    // screen recording (FPP-Mickey, Ghost_1) before this fix. Caching the
+    // last real reading and reusing it across a momentary gap keeps the
+    // overlay's scale stable regardless of image-reload timing.
+    function getCamDimensionsFrom(mediaEl) {
+        var w = mediaEl ? (mediaEl.videoWidth || mediaEl.naturalWidth || 0) : 0;
+        var h = mediaEl ? (mediaEl.videoHeight || mediaEl.naturalHeight || 0) : 0;
+        if (w && h) { cam.lastCamW = w; cam.lastCamH = h; }
+        return { w: cam.lastCamW || CAM_CAPTURE_W, h: cam.lastCamH || CAM_CAPTURE_H };
+    }
 
     // ---- DOM handles ---------------------------------------------------
     var el = {};
@@ -1263,8 +1285,8 @@
             }
             return;
         }
-        var w = mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W;
-        var h = mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H;
+        var dims = getCamDimensionsFrom(mediaEl);
+        var w = dims.w, h = dims.h;
         if (!w || !h) { return; }
         canvas.width = w; canvas.height = h;
         var ctx = canvas.getContext('2d');
@@ -1342,8 +1364,8 @@
 
     function onOverlayDragMove(evt) {
         if (!cam.dragging || !state.layout) { return; }
-        var mediaEl = activeMediaEl();
-        if (mediaEl) { ensureManualCalib(state.layout, mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W, mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H); }
+        var dims = getCamDimensionsFrom(activeMediaEl());
+        ensureManualCalib(state.layout, dims.w, dims.h);
         if (!cam.manualCalib) { return; }
         var p = overlayPointerPos(evt);
         cam.manualCalib.centerX = Math.max(0, Math.min(1, p.x));
@@ -1355,9 +1377,8 @@
 
     function onOverlaySizeChange() {
         if (!state.layout) { return; }
-        var mediaEl = activeMediaEl();
-        var w = mediaEl ? (mediaEl.videoWidth || mediaEl.naturalWidth || CAM_CAPTURE_W) : CAM_CAPTURE_W;
-        var h = mediaEl ? (mediaEl.videoHeight || mediaEl.naturalHeight || CAM_CAPTURE_H) : CAM_CAPTURE_H;
+        var dims = getCamDimensionsFrom(activeMediaEl());
+        var w = dims.w, h = dims.h;
         ensureManualCalib(state.layout, w, h);
         // Slider is a 20-400 "percent of the default auto-fit size" control.
         var maxDim = Math.max(state.layout.visualWidth, state.layout.visualHeight, 1);
