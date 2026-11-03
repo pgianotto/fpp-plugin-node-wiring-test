@@ -59,6 +59,17 @@
             </p>
             <h4>Camera auto-scan</h4>
             <p>
+                <b>The camera needs to actually see the physical prop while
+                it's being flashed</b> - pointing it at yourself, your desk,
+                or anything else that isn't the prop gives the scan nothing
+                real to detect. It works by diffing the camera image before
+                and after each node flashes, so with no real light change in
+                frame it just picks up noise (room lighting, auto-exposure,
+                movement) and produces a scrambled, meaningless result -
+                every node showing as a mismatch matched to some unrelated
+                node is the signature of this, not a bug to chase.
+            </p>
+            <p>
                 Point a camera at the prop - either this device's own camera,
                 or a USB camera physically attached to the FPP box itself
                 (under "Stream/snapshot URL", <b>Detect</b> finds it and

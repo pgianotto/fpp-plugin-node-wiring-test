@@ -1230,13 +1230,26 @@
             var residualText = '-';
             if (det && cam.fit && layout.nodePos[i]) {
                 var predicted = applyFit(cam.fit, layout.nodePos[i].x, layout.nodePos[i].y);
-                var r = dist(predicted, det);
-                residualText = r.toFixed(3);
-                var mismatched = r > cam.threshold;
+                residualText = dist(predicted, det).toFixed(3);
+                // "Mismatch" means exactly what the exported .xmodel means by
+                // it: whether a DIFFERENT node's detection was judged the
+                // better match for this slot by the nearest-neighbor
+                // assignment, not a separate self-residual threshold check.
+                // Those two used to be computed independently, which could
+                // call a slot "OK" while in the same breath saying a
+                // different node was "physically here instead" -
+                // self-contradictory, and confirmed live: most rows in a
+                // real scan showed exactly that contradiction. A node can
+                // pass its own residual check while a closer node still
+                // exists for that slot (common with noisy/clustered
+                // detections), so the assignment - the thing actually used
+                // to build the corrected model - is the only answer that
+                // matters here.
+                var assigned = cam.assignment ? cam.assignment[i] : i;
+                var mismatched = assigned !== i;
                 rowClass = mismatched ? 'nwtRowMismatch' : 'nwtRowOk';
                 statusText = mismatched ? 'MISMATCH' : 'OK';
-                var assigned = cam.assignment ? cam.assignment[i] : i;
-                matchText = 'Node ' + (assigned + 1) + (assigned === i ? ' (as expected)' : ' (physically here instead)');
+                matchText = 'Node ' + (assigned + 1) + (mismatched ? ' (physically here instead)' : ' (as expected)');
             } else if (det) {
                 statusText = 'Detected (no fit yet)';
             }
@@ -1306,7 +1319,11 @@
         function drawDot(pos, i, isCurrent) {
             var p = applyFit(fit, pos.x, pos.y);
             var det = cam.detections ? cam.detections[i] : null;
-            var mismatched = det && cam.threshold !== null && (dist(p, det) > cam.threshold);
+            // Same assignment-based definition of "mismatched" as
+            // renderScanTable() - see its comment for why this can't be a
+            // separate self-residual check without contradicting the table
+            // (and the exported .xmodel, which is built from cam.assignment).
+            var mismatched = det && cam.assignment && cam.assignment[i] !== i;
 
             ctx.beginPath();
             ctx.arc(p.x * w, p.y * h, isCurrent ? 7 : 3, 0, Math.PI * 2);
