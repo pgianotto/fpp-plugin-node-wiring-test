@@ -67,6 +67,7 @@
             <option value="local">This device's camera (phone/tablet/laptop)</option>
             <option value="stream">A camera on the FPP Pi</option>
         </select>
+        <button id="nwtStopCamera" type="button" style="display:none;">&#9632; Stop Camera</button>
     </div>
     <div class="nwtRow" id="nwtCamLocalRow" style="display:none;">
         <label for="nwtCamDevice">Camera:</label>
@@ -79,7 +80,6 @@
             <select id="nwtPiCamDevice"><option value="">(click Detect)</option></select>
             <button id="nwtPiCamDetect" type="button">Detect</button>
             <button id="nwtPiCamStart" type="button" disabled>Start Pi Camera</button>
-            <button id="nwtPiCamStop" type="button" style="display:none;">Stop Pi Camera</button>
             <span id="nwtPiCamStatus" class="nwtLinearNote" style="margin:0;"></span>
         </div>
         <details>
@@ -183,9 +183,13 @@
         </div>
     </details>
 
-    <details>
-        <summary>Manual mismatch log</summary>
-        <p class="nwtNote">For noting mismatches by eye while stepping, without running a camera scan.</p>
+    <details id="nwtLogDetails">
+        <summary>Mismatch log</summary>
+        <p class="nwtNote">
+            Filled in automatically whenever an auto-scan finds mismatches;
+            use "Mark this node as mismatched" above while stepping to add
+            your own by eye too. One combined, exportable list either way.
+        </p>
         <div class="nwtRow">
             <button id="nwtExportLog" type="button">Export log (CSV)</button>
             <button id="nwtClearLog" type="button">Clear log</button>
@@ -218,6 +222,7 @@
         kind: null,       // 'local' | 'stream' | null
         stream: null,     // MediaStream, for 'local'
         streamRefreshTimer: null,
+        piBacked: false,  // true when the active 'stream' source is camera_stream.py on the Pi, so Stop Camera also tells it to stop server-side
         scanning: false,
         cancelRequested: false,
         detections: null, // array parallel to layout.nodePos: {x,y,strength}|null (normalized 0-1 camera coords)
@@ -264,10 +269,10 @@
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
-     'nwtExportLog', 'nwtClearLog', 'nwtLogTable',
+     'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
-     'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStop', 'nwtPiCamStatus',
+     'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStatus', 'nwtStopCamera',
      'nwtOverlayControls', 'nwtOverlayToggle', 'nwtOverlaySize', 'nwtOverlayReset',
      'nwtSettleMs', 'nwtRunScan', 'nwtCancelScan', 'nwtScanStatus', 'nwtScanResults',
      'nwtFitQuality', 'nwtScanTable', 'nwtDownloadXModel'
@@ -786,6 +791,7 @@
         var showCamera = !!cam.kind;
         el.nwtGridWrap.style.display = showCamera ? 'none' : '';
         el.nwtCamWrap.style.display = showCamera ? 'block' : 'none';
+        el.nwtStopCamera.style.display = showCamera ? '' : 'none';
     }
 
     function stopCamera() {
@@ -795,6 +801,7 @@
             cam.stream = null;
         }
         cam.kind = null;
+        cam.piBacked = false;
         el.nwtCamVideo.style.display = 'none';
         el.nwtCamImg.style.display = 'none';
         updatePreviewMode();
@@ -911,26 +918,44 @@
             var url = NWT_API_BASE + 'frame';
             el.nwtPiCamStatus.textContent = 'Running on port ' + data.port + '.';
             el.nwtPiCamStart.style.display = 'none';
-            el.nwtPiCamStop.style.display = '';
+            // After startStreamCamera(), not before: it calls stopCamera()
+            // internally first (to tear down any prior camera), which would
+            // otherwise reset this right back to false.
             startStreamCamera(url);
+            cam.piBacked = true;
         }).catch(function (err) {
             el.nwtPiCamStatus.textContent = 'Start failed: ' + err.message;
             el.nwtPiCamStart.disabled = false;
         });
     }
 
-    function stopPiCamera() {
-        el.nwtPiCamStatus.textContent = 'Stopping...';
-        piCamApi('stop', { method: 'POST' }).then(function () {
+    // Stops the Pi-side camera_stream.py process itself (not just this page's
+    // view of it) - used by the single Stop Camera button when the active
+    // camera is Pi-backed, so switching away or navigating off never leaves
+    // it orphaned holding the USB camera device.
+    function stopPiCameraBackend() {
+        return piCamApi('stop', { method: 'POST' }).then(function () {
             el.nwtPiCamStatus.textContent = 'Stopped.';
             el.nwtPiCamStart.style.display = '';
             el.nwtPiCamStart.disabled = !el.nwtPiCamDevice.value;
-            el.nwtPiCamStop.style.display = 'none';
-            stopCamera();
-            resetScanState();
         }).catch(function (err) {
             el.nwtPiCamStatus.textContent = 'Stop failed: ' + err.message;
         });
+    }
+
+    // The one Stop Camera button stops whatever's actually active - a local
+    // getUserMedia stream needs only client-side teardown, but a Pi-backed
+    // stream also needs its server-side process told to stop, or it keeps
+    // running (holding the camera device) with no remaining control to
+    // reach it once the source dropdown is changed away from "stream".
+    function stopActiveCamera() {
+        var wasPiBacked = cam.piBacked;
+        if (wasPiBacked) {
+            stopPiCameraBackend().then(function () { stopCamera(); resetScanState(); });
+        } else {
+            stopCamera();
+            resetScanState();
+        }
     }
 
     // If a scan/camera session left the Pi camera running (e.g. the page was
@@ -940,7 +965,6 @@
             if (data && data.running && data.port) {
                 el.nwtPiCamStatus.textContent = 'Already running on port ' + data.port + ' (started earlier).';
                 el.nwtPiCamStart.style.display = 'none';
-                el.nwtPiCamStop.style.display = '';
             }
         });
     }
@@ -1043,15 +1067,27 @@
                 return Promise.reject(new Error('no-frame'));
             }
 
+            // Refit roughly 20 times over the course of the scan (never less
+            // than every node, for small models) so the overlay visibly
+            // "snaps" into alignment with the real prop as detections come
+            // in, instead of only updating once at the very end.
+            var liveFitInterval = Math.max(1, Math.floor(layout.nodeCount / 20));
+
             function stepNode(i) {
                 if (cam.cancelRequested || i >= layout.nodeCount) { return Promise.resolve(); }
                 setScanStatus('Scanning node ' + (i + 1) + ' of ' + layout.nodeCount + '...');
+                state.currentIndex = i; // highlights this node on the overlay as it flashes
                 var range = absRangeForNode(layout, cpn, i);
                 return postRangeColor(range.absStart, range.absEnd, 255, 255, 255, cpn >= 4 ? 255 : undefined)
                     .then(function () { return sleep(settleMs); })
                     .then(function () {
                         var frame = captureFrame();
                         detections[i] = diffAndFindBlob(baseline, frame);
+                        cam.detections = detections;
+                        if (i % liveFitInterval === 0 || i === layout.nodeCount - 1) {
+                            updateLiveFitDuringScan(layout, detections);
+                        }
+                        drawOverlay();
                         return postRangeColor(range.absStart, range.absEnd, 0, 0, 0, cpn >= 4 ? 0 : undefined);
                     })
                     .then(function () { return stepNode(i + 1); });
@@ -1077,9 +1113,33 @@
 
     function finishScan() {
         cam.scanning = false;
+        state.currentIndex = -1;
+        drawOverlay();
         el.nwtRunScan.style.display = '';
         el.nwtCancelScan.style.display = 'none';
         updateScanButtonEnabled();
+    }
+
+    // Refits using only the detections gathered so far, mid-scan, so the
+    // overlay's position/scale visibly improves as the scan progresses
+    // rather than jumping once at the very end. This is deliberately NOT
+    // the same thing as the final per-node MISMATCH classification (see
+    // processScanResults/renderScanTable): with only a partial, possibly
+    // still-rough fit, calling anything a mismatch yet would be premature -
+    // that only happens once the full scan (and the assignment it drives)
+    // has completed.
+    function updateLiveFitDuringScan(layout, detections) {
+        var pairs = [];
+        layout.nodePos.forEach(function (pos, idx) {
+            var det = detections[idx];
+            if (pos && det) { pairs.push({ ex: pos.x, ey: pos.y, dx: det.x, dy: det.y, node: idx }); }
+        });
+        if (pairs.length < 3) { return; }
+        var result = robustFit(pairs);
+        if (result.fit) {
+            cam.fit = result.fit;
+            cam.threshold = result.threshold;
+        }
     }
 
     // ---- Fit + matching --------------------------------------------------
@@ -1202,10 +1262,43 @@
         el.nwtFitQuality.className = quality >= 0.7 ? 'nwtFitGood' : 'nwtFitPoor';
 
         cam.assignment = computeAssignment(layout, cam.fit);
-        setScanStatus('Scan finished: ' + detectedCount + ' of ' + layout.nodeCount + ' nodes detected.');
+        var mismatchCount = logScanMismatches(layout);
+        setScanStatus('Scan finished: ' + detectedCount + ' of ' + layout.nodeCount + ' nodes detected, ' +
+            mismatchCount + ' mismatch' + (mismatchCount === 1 ? '' : 'es') + ' logged.');
         renderScanTable(result);
         drawOverlay();
         el.nwtDownloadXModel.disabled = layout.linear; // no real geometry to export
+    }
+
+    // Appends every node the scan found mismatched to the same log the
+    // manual "Mark this node as mismatched" button writes to, so there's one
+    // consolidated, CSV-exportable record regardless of how a mismatch was
+    // found. Re-running a scan replaces its own previous entries (tagged
+    // source:'scan') rather than piling up duplicates; manually-added
+    // entries are left alone.
+    function logScanMismatches(layout) {
+        mismatchLog = mismatchLog.filter(function (e) { return e.source !== 'scan'; });
+        var cpn = currentCpn();
+        var count = 0;
+        for (var i = 0; i < layout.nodeCount; i++) {
+            var assigned = cam.assignment[i];
+            if (assigned === i) { continue; }
+            var pos = layout.nodePos[i];
+            var range = absRangeForNode(layout, cpn, i);
+            mismatchLog.push({
+                time: new Date().toLocaleTimeString(),
+                model: state.modelName,
+                node: i + 1,
+                pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + (i + 1)),
+                channels: (range.absStart + 1) + '-' + (range.absEnd + 1),
+                note: 'Auto-scan: node ' + (assigned + 1) + ' physically here instead',
+                source: 'scan'
+            });
+            count++;
+        }
+        renderLog();
+        if (count > 0) { el.nwtLogDetails.open = true; } // surface it rather than leaving it silently collapsed
+        return count;
     }
 
     // Greedy nearest-neighbor match between each slot's predicted camera
@@ -1517,8 +1610,12 @@
     el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); });
 
     el.nwtCamSource.addEventListener('change', function () {
-        stopCamera();
-        resetScanState();
+        // stopActiveCamera(), not stopCamera(): switching away from "stream"
+        // while the Pi camera is running must also stop its server-side
+        // process, or it's left orphaned holding the USB camera device with
+        // no remaining control in the UI to reach it (its row is about to
+        // be hidden).
+        stopActiveCamera();
         var mode = el.nwtCamSource.value; // '' | 'local' | 'stream'
         el.nwtCamLocalRow.style.display = (mode === 'local') ? '' : 'none';
         el.nwtCamStreamRow.style.display = (mode === 'stream') ? '' : 'none';
@@ -1527,7 +1624,7 @@
     el.nwtCamStreamStart.addEventListener('click', function () { startStreamCamera(); });
     el.nwtPiCamDetect.addEventListener('click', detectPiCameras);
     el.nwtPiCamStart.addEventListener('click', startPiCamera);
-    el.nwtPiCamStop.addEventListener('click', stopPiCamera);
+    el.nwtStopCamera.addEventListener('click', stopActiveCamera);
     el.nwtPiCamDevice.addEventListener('change', function () {
         el.nwtPiCamStart.disabled = !el.nwtPiCamDevice.value;
     });
