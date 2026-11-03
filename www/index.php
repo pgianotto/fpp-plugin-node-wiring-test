@@ -1273,11 +1273,17 @@
         var fit = getActiveFit(layout, w, h);
         var usingScanFit = !!cam.fit;
 
-        layout.nodePos.forEach(function (pos, i) {
-            if (!pos) { return; }
+        // Drawn in two passes, current node last: nodePos.forEach draws in
+        // wiring-index order, and on a dense/small-scale model many dots
+        // land close enough to overlap - a later non-current dot painted
+        // over an earlier current-node highlight hid it completely
+        // (confirmed live: the current node never appeared on the camera
+        // overlay even though the separate step-grid canvas showed it
+        // correctly). Drawing every other dot first, then the current one
+        // on top regardless of its index, guarantees it's always visible.
+        function drawDot(pos, i, isCurrent) {
             var p = applyFit(fit, pos.x, pos.y);
             var det = cam.detections ? cam.detections[i] : null;
-            var isCurrent = i === state.currentIndex;
             var mismatched = det && cam.threshold !== null && (dist(p, det) > cam.threshold);
 
             ctx.beginPath();
@@ -1301,7 +1307,14 @@
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
+        }
+
+        layout.nodePos.forEach(function (pos, i) {
+            if (pos && i !== state.currentIndex) { drawDot(pos, i, false); }
         });
+        if (state.currentIndex >= 0 && layout.nodePos[state.currentIndex]) {
+            drawDot(layout.nodePos[state.currentIndex], state.currentIndex, true);
+        }
     }
 
     function startLiveOverlayLoop() {
