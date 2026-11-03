@@ -71,7 +71,7 @@
         <select id="nwtCamSource">
             <option value="" selected>None - just show the layout</option>
             <option value="local">This device's camera (phone/tablet/laptop)</option>
-            <option value="stream">A camera on the FPP Pi</option>
+            <option value="stream">A USB camera on this FPP device</option>
         </select>
         <button id="nwtStopCamera" type="button" style="display:none;">&#9632; Stop Camera</button>
     </div>
@@ -82,21 +82,21 @@
     </div>
     <div id="nwtCamStreamRow" style="display:none;">
         <div class="nwtRow">
-            <label for="nwtPiCamDevice">USB camera on this Pi:</label>
+            <label for="nwtPiCamDevice">USB camera on this device:</label>
             <select id="nwtPiCamDevice"><option value="">(click Detect)</option></select>
             <button id="nwtPiCamDetect" type="button">Detect</button>
-            <button id="nwtPiCamStart" type="button" disabled>Start Pi Camera</button>
+            <button id="nwtPiCamStart" type="button" disabled>Start USB Camera</button>
             <span id="nwtPiCamStatus" class="nwtLinearNote" style="margin:0;"></span>
         </div>
         <details>
             <summary>Use a stream/snapshot URL instead</summary>
             <div class="nwtRow">
-                <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;pi-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
+                <input type="text" id="nwtCamStreamUrl" placeholder="http://&lt;device-ip&gt;:8091/snapshot.jpg (a single-image endpoint, polled)" style="width:28em;">
                 <button id="nwtCamStreamStart" type="button">Load Stream</button>
             </div>
             <div class="nwtLinearNote">
                 A URL on a different host/port than this page may be blocked
-                by FPP's own Content-Security-Policy - "Start Pi Camera"
+                by FPP's own Content-Security-Policy - "Start USB Camera"
                 above avoids this by proxying through this page's own origin.
             </div>
         </details>

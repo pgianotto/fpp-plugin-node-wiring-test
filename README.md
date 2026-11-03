@@ -22,9 +22,9 @@ new network protocol, no extra daemon, nothing installed) so you can:
 - mark a node as mismatched with an optional note as you go, and export the
   resulting list as a CSV checklist for fixing wiring afterward.
 
-Point a camera at the prop (this device's own, or one physically attached to
-the FPP Pi) and the live video gets a live overlay of the model's shape right
-on top of it - drag to position it, a slider to size it, and the node
+Point a camera at the prop (this device's own, or a USB camera physically
+attached to the FPP box) and the live video gets a live overlay of the
+model's shape right on top of it - drag to position it, a slider to size it, and the node
 currently being stepped/played highlights on the overlay in its expected
 position, so you can watch the real prop and the overlay side by side and
 see mismatches with your own eyes, no scan required.
@@ -101,6 +101,13 @@ FPP 10.0 or later. This plugin was developed and verified against FPP
 predates this API, Status &rarr; Testing &rarr; Channel Output Testing will
 also be missing/different, which is the tell.
 
+No `platforms` restriction is declared, so it's offered on every FPP
+platform (Raspberry Pi, BeagleBone Black/64, Armbian, Debian, Ubuntu, ...) -
+nothing in the code is Pi-specific. The core step/auto-scan features need
+nothing beyond FPP's own API; the optional USB-camera-on-this-device feature
+additionally needs `ffmpeg`/`python3`/`v4l-utils`, which `fpp_install.sh`
+installs best-effort wherever `apt` is available (see Limitations).
+
 ## Limitations
 
 - Geometric layout is only drawn for models FPP itself can resolve a 2D
@@ -117,9 +124,16 @@ also be missing/different, which is the tell.
 - Camera auto-scan needs a flash-and-diff with decent contrast against
   ambient light, and assumes the camera/lighting stay put for the whole
   scan.
-- The bundled Pi camera stream (`backend/camera_stream.py`) needs `ffmpeg`,
-  `python3`, and `v4l-utils` on the FPP box (declared as plugin dependencies)
-  and a USB camera FPP can see as `/dev/videoN`. It opens a port on your
+- The bundled Pi/USB camera stream (`backend/camera_stream.py`) needs
+  `ffmpeg`, `python3` and `v4l-utils` on the FPP box and a USB camera FPP can
+  see as `/dev/videoN`. These are standard Linux/V4L2 tooling, nothing
+  Raspberry-Pi-specific, so this works the same on a BeagleBone or any other
+  apt-based platform with a camera attached - `fpp_install.sh` installs
+  whichever of them are missing, best-effort, on any platform with `apt`.
+  (They're deliberately *not* a hard `dependencies` entry in
+  `pluginInfo.json`, since that would make FPP refuse the install of the
+  *entire* plugin - including the core step/scan features, which need none
+  of this - on a platform without `apt` at all.) It opens a port on your
   local network (default 8091) for as long as you leave it running - stop it
   from the page when you're done, since nothing currently times it out
   automatically.

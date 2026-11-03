@@ -72,9 +72,9 @@
             <p>
                 Point a camera at the prop - either this device's own camera,
                 or a USB camera physically attached to the FPP box itself
-                (under "Stream/snapshot URL", <b>Detect</b> finds it and
-                <b>Start Pi Camera</b> starts streaming it right from this
-                page) - and click <b>Run Auto Scan</b>. It blanks the model,
+                (under "A USB camera on this FPP device", <b>Detect</b> finds
+                it and <b>Start USB Camera</b> starts streaming it right from
+                this page) - and click <b>Run Auto Scan</b>. It blanks the model,
                 then flashes each node white
                 one at a time, diffing the camera frame before/after each
                 flash to find where it lit up. No separate calibration step
@@ -101,10 +101,12 @@
                 light don't move/change mid-scan.
             </p>
             <p>
-                <b>Pi USB camera:</b> Start Pi Camera runs a small bundled
-                script (ffmpeg + a Python MJPEG server) against the USB
-                camera you picked, reachable at
-                <code>http://&lt;this device&gt;:8091/snapshot.jpg</code>
+                <b>USB camera on this device:</b> Start USB Camera runs a
+                small bundled script (ffmpeg + a Python MJPEG server)
+                against the USB camera you picked - standard Linux/V4L2
+                tooling, so this works the same on a Raspberry Pi, a
+                BeagleBone, or any other apt-based FPP platform - reachable
+                at <code>http://&lt;this device&gt;:8091/snapshot.jpg</code>
                 (and as a continuous stream at <code>/stream.mjpg</code>, for
                 tools that read it directly) on your local network for as
                 long as it's running. The page itself polls
@@ -114,7 +116,7 @@
                 &lt;img&gt; tag, a known issue for mjpg-streamer users too; a
                 plain single-image endpoint, polled, works everywhere. It is
                 not a system service and does not start on boot - stop it
-                with <b>Stop Pi Camera</b> when you're done, or it'll keep
+                with <b>Stop Camera</b> when you're done, or it'll keep
                 running (holding the camera device open) until fppd
                 restarts.
             </p>

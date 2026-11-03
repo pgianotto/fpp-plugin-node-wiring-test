@@ -9,7 +9,7 @@
   "allowUpdates": 1,
   "releaseNotesStyle": "gitHistory",
   "privacy": {
-    "summary": "Lights one node at a time on a model you pick, using FPP's own local channel-test API. Can optionally watch a camera to help spot mismatches; frames are never saved. A USB camera on this device can be streamed to your browser over your local network.",
+    "summary": "Lights one node at a time, using FPP's own local channel-test API. Can optionally watch a camera to spot mismatches (frames never saved), or stream a USB camera on this device to your browser locally.",
     "sends": [
       {
         "to": "devices on your local network",
@@ -39,7 +39,7 @@
   ],
   "dependencies": {
     "plugins": [],
-    "packages": ["python3", "ffmpeg", "v4l-utils"],
+    "packages": [],
     "python": [],
     "scripts": []
   }
