@@ -4,38 +4,44 @@
 // can be watched against each node's expected position/channel range.
 ?>
 <style>
-.nwtApp { max-width: 1000px; }
+/* Theme-aware throughout (PLUGIN_GUIDELINES.md 8.2): every color below is a
+   Bootstrap 5.3 CSS variable, never a hardcoded hex/rgb(), so this reads
+   correctly in both FPP's light and dark themes. The two places with a
+   deliberately fixed-dark background (the node grid and camera preview) use
+   var(--bs-dark)/var(--bs-light) - Bootstrap's own always-dark/always-light
+   tokens, not raw hex - since that preview area represents pixel/video
+   content, the same way a video player stays black regardless of page theme. */
+.nwtApp { max-width: 62.5rem; }
 .nwtApp h2 { margin-bottom: 0.2em; }
-.nwtApp .nwtNote { color: #666; font-style: italic; margin-bottom: 1em; }
+.nwtApp .nwtNote { color: var(--bs-secondary-color); font-style: italic; margin-bottom: 1em; }
 .nwtApp .nwtRow { display: flex; align-items: center; gap: 0.6em; margin-bottom: 0.6em; flex-wrap: wrap; }
 .nwtApp label { font-weight: 600; }
 .nwtApp select, .nwtApp input[type=number], .nwtApp input[type=color] { padding: 0.2em 0.4em; }
 .nwtApp button { padding: 0.3em 0.9em; cursor: pointer; }
 .nwtApp button:disabled { cursor: default; opacity: 0.5; }
-.nwtInfoBox { border: 1px solid #ccc; border-radius: 4px; padding: 0.6em 1em; margin: 0.8em 0; background: #fafafa; }
+.nwtInfoBox { border: 1px solid var(--bs-border-color); border-radius: 4px; padding: 0.6em 1em; margin: 0.8em 0; background: var(--bs-tertiary-bg); }
 .nwtInfoBox .nwtInfoLine { margin: 0.15em 0; }
-.nwtInfoBox .nwtMismatchFlag { color: #b00020; font-weight: 600; }
-#nwtGridWrap { overflow: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 1em; max-height: 480px; background: #111; }
+.nwtInfoBox .nwtMismatchFlag { color: var(--bs-danger); font-weight: 600; }
+#nwtGridWrap { overflow: auto; border: 1px solid var(--bs-border-color); padding: 10px; margin-bottom: 1em; max-height: 480px; background: var(--bs-dark); }
 #nwtGridCanvas { display: block; }
-#nwtGridPlaceholder { color: #999; padding: 1em; }
-.nwtLinearNote { color: #999; font-size: 0.85em; margin-top: -0.4em; margin-bottom: 0.6em; }
+#nwtGridPlaceholder { color: var(--bs-light); padding: 1em; }
+.nwtLinearNote { color: var(--bs-secondary-color); font-size: 0.85em; margin-top: -0.4em; margin-bottom: 0.6em; }
 .nwtLogTable { width: 100%; border-collapse: collapse; margin-top: 0.5em; }
-.nwtLogTable th, .nwtLogTable td { border: 1px solid #ccc; padding: 0.3em 0.5em; text-align: left; font-size: 0.9em; }
+.nwtLogTable th, .nwtLogTable td { border: 1px solid var(--bs-border-color); padding: 0.3em 0.5em; text-align: left; font-size: 0.9em; }
 .nwtStatus { font-weight: 600; }
-.nwtStatus.nwtRunning { color: #0a7d2c; }
-#nwtCamWrap { position: relative; display: none; max-width: 640px; background: #000; margin-bottom: 0.6em; }
+.nwtStatus.nwtRunning { color: var(--bs-success); }
+#nwtCamWrap { position: relative; display: none; max-width: 40rem; background: var(--bs-dark); margin-bottom: 0.6em; }
 #nwtCamVideo, #nwtCamImg { width: 100%; display: block; }
 #nwtCamOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-.nwtCamDot { }
-.nwtRowMismatch { background: #fdecea; }
-.nwtRowOk { background: #eaf7ec; }
-.nwtRowUnknown { background: #f5f5f5; color: #888; }
-#nwtFitQuality.nwtFitPoor { color: #b00020; font-weight: 600; }
-#nwtFitQuality.nwtFitGood { color: #0a7d2c; font-weight: 600; }
-.nwtApp h3 { margin: 1.4em 0 0.4em; border-top: 1px solid #e5e5e5; padding-top: 0.8em; }
+.nwtRowMismatch { background: var(--bs-danger-bg-subtle); }
+.nwtRowOk { background: var(--bs-success-bg-subtle); }
+.nwtRowUnknown { background: var(--bs-secondary-bg-subtle); color: var(--bs-secondary-color); }
+#nwtFitQuality.nwtFitPoor { color: var(--bs-danger); font-weight: 600; }
+#nwtFitQuality.nwtFitGood { color: var(--bs-success); font-weight: 600; }
+.nwtApp h3 { margin: 1.4em 0 0.4em; border-top: 1px solid var(--bs-border-color); padding-top: 0.8em; }
 .nwtApp h3:first-of-type { border-top: none; padding-top: 0; }
 .nwtApp details { margin: 0.6em 0; }
-.nwtApp details > summary { cursor: pointer; font-weight: 600; color: #555; }
+.nwtApp details > summary { cursor: pointer; font-weight: 600; color: var(--bs-secondary-color); }
 .nwtApp details[open] > summary { margin-bottom: 0.6em; }
 #nwtPreviewWrap { margin-bottom: 0.8em; }
 </style>

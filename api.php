@@ -29,8 +29,14 @@ function nwtPluginDir() {
 function nwtDataDir() {
     // Outside the plugin directory on purpose (PLUGIN_GUIDELINES.md 2.12):
     // state here must survive a plugin Reinstall, which deletes and
-    // re-clones the plugin directory itself.
-    $dir = '/home/fpp/media/plugindata/fpp-plugin-node-wiring-test';
+    // re-clones the plugin directory itself. Resolved via FPP's own
+    // mediaDirectory setting, not hard-coded, so a relocated media
+    // directory still works (PLUGIN_GUIDELINES.md 1.1 makes the same point
+    // about logDirectory).
+    global $settings;
+    $media = (isset($settings['mediaDirectory']) && $settings['mediaDirectory'] !== '')
+        ? $settings['mediaDirectory'] : '/home/fpp/media';
+    $dir = $media . '/plugindata/fpp-plugin-node-wiring-test';
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
     }
@@ -39,6 +45,16 @@ function nwtDataDir() {
 
 function nwtPidFile() {
     return nwtDataDir() . '/camera_stream.pid';
+}
+
+// PLUGIN_GUIDELINES.md 1.1: exactly one runtime log file, named
+// plugin-<repoName>.log, in FPP's own logs directory (resolved via FPP, not
+// hard-coded) - not a file of our own under plugindata/.
+function nwtLogFile() {
+    global $settings;
+    $dir = (isset($settings['logDirectory']) && $settings['logDirectory'] !== '')
+        ? $settings['logDirectory'] : '/home/fpp/media/logs';
+    return $dir . '/plugin-fpp-plugin-node-wiring-test.log';
 }
 
 function nwtRunningPid() {
@@ -125,7 +141,7 @@ function nwtCameraStart() {
     }
 
     $script = nwtPluginDir() . '/backend/camera_stream.py';
-    $logFile = nwtDataDir() . '/camera_stream.log';
+    $logFile = nwtLogFile();
 
     // Argument list is fixed-position and every value is pre-validated above
     // (device against a strict path pattern, the rest as bounded integers),

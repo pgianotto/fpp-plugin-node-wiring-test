@@ -14,6 +14,9 @@ Started/stopped by ../api.php (FPP plugin API), not run directly by FPP.
 """
 import argparse
 import http.server
+import logging
+import logging.handlers
+import os
 import re
 import socketserver
 import subprocess
@@ -23,6 +26,22 @@ import time
 
 FRAME_START = b"\xff\xd8"
 FRAME_END = b"\xff\xd9"
+
+log = logging.getLogger("camera_stream")
+
+
+def init_logging():
+    # PLUGIN_GUIDELINES.md 1.1/1.2: exactly one runtime log, named
+    # plugin-<repoName>.log, in FPP's own logs directory; WatchedFileHandler
+    # (not a plain FileHandler/basicConfig) reopens the file after FPP
+    # rotates it, so this long-running daemon doesn't keep writing into the
+    # renamed copy once a rotation happens underneath it.
+    logdir = os.environ.get("LOGDIR", "/home/fpp/media/logs")
+    path = os.path.join(logdir, "plugin-fpp-plugin-node-wiring-test.log")
+    handler = logging.handlers.WatchedFileHandler(path)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
 
 latest_frame = None
 frame_lock = threading.Lock()
@@ -79,13 +98,14 @@ def capture_loop(device, width, height, fps):
                 elif len(buf) > 2_000_000:
                     del buf[:-200_000]  # runaway garbage, never a real frame this big
         except Exception:
-            pass
+            log.exception("capture loop error")
         finally:
             try:
                 ffmpeg_proc.terminate()
             except Exception:
                 pass
         # ffmpeg died (camera unplugged, device busy, etc.) - retry, slowly.
+        log.warning("ffmpeg exited, retrying capture in 2s")
         time.sleep(2)
 
 
@@ -152,15 +172,17 @@ def main():
     ap.add_argument("--fps", type=int, default=8)
     args = ap.parse_args()
 
+    init_logging()
+
     if not re.match(r"^/dev/video[0-9]+$", args.device):
-        print("Refusing non-v4l2-looking device path: %s" % args.device, file=sys.stderr)
+        log.error("Refusing non-v4l2-looking device path: %s", args.device)
         sys.exit(1)
 
     t = threading.Thread(target=capture_loop, args=(args.device, args.width, args.height, args.fps), daemon=True)
     t.start()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
-    print("Serving %s as MJPEG on port %d (/stream.mjpg, /snapshot.jpg)" % (args.device, args.port))
+    log.info("Serving %s as MJPEG on port %d (/stream.mjpg, /snapshot.jpg)", args.device, args.port)
     try:
         server.serve_forever()
     finally:
@@ -172,4 +194,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        log.exception("fatal error")
+        raise

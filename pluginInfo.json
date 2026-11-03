@@ -2,34 +2,36 @@
   "repoName": "fpp-plugin-node-wiring-test",
   "name": "Node Wiring Test",
   "author": "pgianotto",
-  "description": "Pick an FPP model and step or auto-chase through it one node at a time, using FPP's own channel-test API, to visually verify wiring order against what each node's position is supposed to be. Built to catch miswired/reversed/crossed pixel strings before a show runs.",
+  "description": "Pick an FPP model and step, auto-chase, or camera-scan through its nodes to catch wiring mistakes before a show runs, using FPP's own channel-test API. Can optionally use your device's camera or a USB camera on this FPP box to help spot mismatches; camera frames are processed in memory and never saved to disk.",
   "homeURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test",
   "srcURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test.git",
   "bugURL": "https://github.com/pgianotto/fpp-plugin-node-wiring-test/issues",
   "allowUpdates": 1,
   "releaseNotesStyle": "gitHistory",
   "privacy": {
-    "summary": "Lights one node at a time on a model you pick by calling FPP's own local channel-test API. Optionally, on your command only, streams a USB camera attached to this device over your local network so a phone/tablet/laptop viewing this page can see it. Nothing is sent further than that.",
+    "summary": "Lights one node at a time on a model you pick, using FPP's own local channel-test API. Can optionally watch a camera to help spot mismatches; frames are never saved. A USB camera on this device can be streamed to your browser over your local network.",
     "sends": [
       {
-        "to": "devices on your local network that you point at this FPP box's IP and the camera stream's port",
-        "what": "live MJPEG video from a USB camera attached to this FPP device",
-        "why": "so a phone/tablet/laptop viewing the Node Wiring Test page can see and auto-scan a camera that's physically connected to the FPP box rather than to the viewing device",
+        "to": "devices on your local network",
+        "what": "live video from the USB camera",
+        "why": "so another device's browser can view/auto-scan the camera on this device",
         "alwaysOn": false
       }
     ],
     "collects": [],
-    "sensors": [],
+    "sensors": [
+      { "type": "camera", "stored": false }
+    ],
     "remoteAccess": "lan",
     "systemChanges": [
-      { "kind": "process", "what": "On your explicit 'Start Pi Camera' action only, starts a background process (api.php's camera/start) that runs ffmpeg against a USB camera device and serves it as MJPEG over a local HTTP port. You stop it with 'Stop Pi Camera' (or by restarting fppd); it is not installed as a system service and does not start on boot." }
+      { "kind": "network", "what": "Opens a local port serving a USB camera's video while you have it running (Start/Stop Camera); not a system service, does not start on boot." }
     ],
     "closedCode": false,
-    "other": "Temporarily overrides live output on the selected model's channels while a test is running/stepping, the same way FPP's built-in Channel Output Test page does. Stopping the test (or leaving the page) clears the override; nothing is written to FPP's configuration or persisted, aside from the camera stream's own PID/log files under media/plugindata while it's running."
+    "other": "Test-mode channel overrides, the mismatch log and scan results are all transient (in fppd or the browser tab) and are not written to FPP's configuration. The camera feature is off by default and only active while you have it started."
   },
   "versions": [
     {
-      "minFPPVersion": "8.0",
+      "minFPPVersion": "10.0",
       "maxFPPVersion": "0",
       "branch": "master",
       "sha": ""

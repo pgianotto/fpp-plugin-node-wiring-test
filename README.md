@@ -94,10 +94,12 @@ for **Node Wiring Test** under the **Output** menu.
 
 ## Requirements
 
-A reasonably current FPP build with the `/api/fppd/testing` channel-test
-API and model-aware `channelSet` support (targeted at FPP 8.0+; if your
-build predates this API, Status &rarr; Testing &rarr; Channel Output Testing
-will also be missing/different, which is the tell).
+FPP 10.0 or later. This plugin was developed and verified against FPP
+10.x-master; the `/api/fppd/testing` channel-test API and model-aware
+`channelSet` support it relies on weren't confirmed present any earlier, so
+`pluginInfo.json` doesn't claim compatibility below FPP 10. If your build
+predates this API, Status &rarr; Testing &rarr; Channel Output Testing will
+also be missing/different, which is the tell.
 
 ## Limitations
 
