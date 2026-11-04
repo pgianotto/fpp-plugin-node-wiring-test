@@ -39,7 +39,10 @@
                 they can zoom to avoid an oversized canvas.
                 Hover any node in the preview to see its number in a tooltip,
                 handy for filling in "Node that actually lit" above without
-                losing count.
+                losing count. Node 1 (the start of the wire) is always
+                colored green and the last node (its end) is always red, so
+                you can tell which end of the prop you're looking at without
+                hovering anything.
             </p>
             <p>
                 <b>Geometry support:</b> models using a simple horizontal or

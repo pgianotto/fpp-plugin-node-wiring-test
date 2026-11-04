@@ -130,10 +130,13 @@
         </span>
     </div>
     <p class="nwtNote" id="nwtPreviewToolbarNote">
-        Mouse over a node below to see its number - handy for logging "node
-        that actually lit" above without losing count. Back mirrors the
-        layout left/right for working from behind the prop; it's a display
-        option only and doesn't change wiring order or channels.
+        <span style="color:#2ecc71;font-weight:600;">&#9679; Node 1</span> is
+        the start of the wire, <span style="color:#ff4d4d;font-weight:600;">&#9679; the last node</span>
+        is its end - the rest are blue, and the one currently lit is shown
+        bigger in white. Mouse over a node to see its number - handy for
+        logging "node that actually lit" above without losing count. Back
+        mirrors the layout left/right for working from behind the prop; it's
+        a display option only and doesn't change wiring order or channels.
     </p>
     <div id="nwtPreviewWrap">
         <div id="nwtGridWrap">
@@ -687,34 +690,59 @@
         // being confused for the camera overlay's green/red match/mismatch
         // colors) with a faint outline for contrast; the current node is
         // drawn separately, last, so it's never covered by a neighbor.
+        //
+        // Node 0 (the start of the wire) and the last node (its end) get
+        // their own colors - green/red, the universal start/end convention -
+        // so you can tell at a glance which end of the prop you're looking
+        // at without hovering or stepping all the way there. Being the
+        // "current" node (bigger, white fill) takes priority over the
+        // normal start/end fill, but its ring still shows green/red so that
+        // information isn't lost while stepping through node 0 or the last node.
         var radius = Math.max(2, cell * 0.42);
-        function drawNode(x, y, isCurrent) {
+        var lastIndex = layout.nodeCount - 1;
+        var START_COLOR = '#2ecc71', END_COLOR = '#ff4d4d', NORMAL_COLOR = '#4da3ff';
+        function drawNode(x, y, nodeIdx, isCurrent) {
+            var isStart = nodeIdx === 0, isEnd = nodeIdx === lastIndex;
             var px = displayX(layout, x) * cell + cell / 2;
             var py = y * cell + cell / 2;
             ctx.beginPath();
             ctx.arc(px, py, isCurrent ? radius * 1.6 : radius, 0, Math.PI * 2);
-            ctx.fillStyle = isCurrent ? '#fff' : '#4da3ff';
+            ctx.fillStyle = isCurrent ? '#fff' : (isStart ? START_COLOR : (isEnd ? END_COLOR : NORMAL_COLOR));
             ctx.fill();
             if (cell > 5) {
-                ctx.lineWidth = isCurrent ? 2 : 1;
-                ctx.strokeStyle = isCurrent ? '#ffce00' : 'rgba(0,0,0,0.6)';
+                ctx.lineWidth = (isCurrent || isStart || isEnd) ? 2 : 1;
+                ctx.strokeStyle = isCurrent ? (isStart ? START_COLOR : (isEnd ? END_COLOR : '#ffce00'))
+                    : (isStart ? '#145a32' : (isEnd ? '#7a1f1f' : 'rgba(0,0,0,0.6)'));
                 ctx.stroke();
             }
         }
 
+        // Three passes, in priority order, so a node never gets silently
+        // covered by one drawn after it at a nearby/overlapping position on
+        // a dense model (the same reasoning as the camera overlay's
+        // current-node pass): plain nodes first, then start/end on top of
+        // those, then the current node on top of everything.
         for (var y = 0; y < layout.visualHeight; y++) {
             for (var x = 0; x < layout.visualWidth; x++) {
                 var nodeIdx = cellByPos[x + ',' + y];
-                if (nodeIdx === undefined || nodeIdx === state.currentIndex) { continue; }
-                drawNode(x, y, false);
+                if (nodeIdx === undefined || nodeIdx === state.currentIndex ||
+                    nodeIdx === 0 || nodeIdx === lastIndex) { continue; }
+                drawNode(x, y, nodeIdx, false);
             }
         }
 
         if (state.showWiringPath) { drawWiringPath(ctx, layout, cell); }
 
+        if (layout.nodePos[0] && 0 !== state.currentIndex) {
+            drawNode(layout.nodePos[0].x, layout.nodePos[0].y, 0, false);
+        }
+        if (lastIndex !== 0 && layout.nodePos[lastIndex] && lastIndex !== state.currentIndex) {
+            drawNode(layout.nodePos[lastIndex].x, layout.nodePos[lastIndex].y, lastIndex, false);
+        }
+
         if (state.currentIndex >= 0 && layout.nodePos[state.currentIndex]) {
             var cur = layout.nodePos[state.currentIndex];
-            drawNode(cur.x, cur.y, true);
+            drawNode(cur.x, cur.y, state.currentIndex, true);
         }
 
         if (state.showNodeNumbers) { drawNodeNumbers(ctx, layout, cell); }
@@ -800,7 +828,8 @@
             hideGridTooltip();
             return;
         }
-        el.nwtGridTooltip.textContent = 'Node ' + (nodeIdx + 1);
+        var tag = (nodeIdx === 0) ? ' (start)' : (nodeIdx === layout.nodeCount - 1) ? ' (end)' : '';
+        el.nwtGridTooltip.textContent = 'Node ' + (nodeIdx + 1) + tag;
         el.nwtGridTooltip.style.left = (evt.clientX + 14) + 'px';
         el.nwtGridTooltip.style.top = (evt.clientY + 14) + 'px';
         el.nwtGridTooltip.style.display = '';

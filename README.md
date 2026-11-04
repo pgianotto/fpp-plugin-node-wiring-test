@@ -31,7 +31,9 @@ changes wiring order or channels sent), a "Show wiring path" checkbox draws a
 line through the nodes in real wiring order, a "Show node numbers" checkbox
 labels every node at once (once zoomed in enough to read them), zoom buttons
 (or Ctrl/Cmd+scroll over the preview) zoom in on dense models, and hovering
-any node shows its number in a tooltip.
+any node shows its number in a tooltip. Node 1 (the start of the wire) is
+always green and the last node (its end) is always red, so either end is
+identifiable at a glance.
 
 Point a camera at the prop (this device's own, or a USB camera physically
 attached to the FPP box) and the live video gets a live overlay of the
