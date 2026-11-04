@@ -40,6 +40,22 @@
                 it's the same kind of transient override as the built-in
                 Channel Output Test page.
             </p>
+            <p>
+                <b>Fixing wiring by eye, without a camera:</b> if you'd rather
+                just watch the prop yourself while stepping through it, fill
+                in <b>Node that actually lit</b> with the real node number
+                before clicking <b>Mark this node as mismatched</b> - e.g. if
+                you command node 7 and physically see node 12 light up
+                instead, step 7 says "actually lit: 12". Once you've gone
+                through the whole prop this way, <b>Download corrected
+                .xmodel (from this log)</b> (under the Mismatch log) builds
+                the same kind of corrected <code>.xmodel</code> the camera
+                auto-scan would, placing every corrected node at its real
+                physical position - no camera involved at all. Entries left
+                with just a note and no number aren't placement data, so they
+                don't affect the export; every node you didn't correct keeps
+                its originally-wired position.
+            </p>
             <h4>Live camera overlay</h4>
             <p>
                 Whenever a camera and a model are both active, the camera view

@@ -144,8 +144,11 @@
         <div class="nwtInfoLine"><b>Absolute channels being driven:</b> <span id="nwtInfoChannels"></span></div>
         <div class="nwtInfoLine">
             <button id="nwtMarkMismatch" type="button">Mark this node as mismatched</button>
-            <input type="text" id="nwtMismatchNote" placeholder="optional note" style="width:18em;">
+            <label for="nwtActualNode">Node that actually lit:</label>
+            <input type="number" id="nwtActualNode" min="1" placeholder="#" style="width:5em;">
+            <input type="text" id="nwtMismatchNote" placeholder="optional note" style="width:14em;">
         </div>
+        <div class="nwtNote" id="nwtActualNodeError" style="display:none;"></div>
     </div>
 
     <h3>Auto-scan</h3>
@@ -199,9 +202,17 @@
         <div class="nwtRow">
             <button id="nwtExportLog" type="button">Export log (CSV)</button>
             <button id="nwtClearLog" type="button">Clear log</button>
+            <button id="nwtDownloadManualXModel" type="button" disabled>Download corrected .xmodel (from this log)</button>
         </div>
+        <p class="nwtNote">
+            Builds a corrected <code>.xmodel</code> straight from the "Node
+            that actually lit" entries above - no camera or auto-scan
+            needed. Entries with a note but no actual-node number aren't
+            placement data, so they're left out of the correction (every
+            other node keeps its originally-wired position).
+        </p>
         <table class="nwtLogTable" id="nwtLogTable">
-            <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Note</th></tr></thead>
+            <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Actually lit</th><th>Note</th></tr></thead>
             <tbody></tbody>
         </table>
     </details>
@@ -274,8 +285,8 @@
     ['nwtModel', 'nwtRefreshModels', 'nwtChannelsPerNode', 'nwtColor', 'nwtWhiteWrap', 'nwtWhite',
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
-     'nwtMarkMismatch', 'nwtMismatchNote', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
-     'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails',
+     'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
+     'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
      'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStatus', 'nwtStopCamera',
@@ -351,6 +362,7 @@
         setControlsEnabled(false);
         updateScanButtonEnabled();
         updateOverlayControlsVisibility();
+        updateManualXModelButton();
         if (!name) { return; }
 
         apiGet('/api/models/' + encodeURIComponent(name)).then(function (model) {
@@ -364,6 +376,7 @@
             setStatus('Ready (' + layout.nodeCount + ' node' + (layout.nodeCount === 1 ? '' : 's') + ')', false);
             updateScanButtonEnabled();
             updateOverlayControlsVisibility();
+            updateManualXModelButton();
         }).catch(function (err) {
             setStatus('Error loading model: ' + err.message, false);
             renderGridPlaceholder('Could not load model definition.');
@@ -729,6 +742,12 @@
     }
 
     // ---- Mismatch log -----------------------------------------------
+    function showActualNodeError(msg) {
+        el.nwtActualNodeError.textContent = msg;
+        el.nwtActualNodeError.style.display = msg ? '' : 'none';
+        el.nwtActualNodeError.style.color = msg ? 'var(--bs-danger)' : '';
+    }
+
     function markMismatch() {
         if (state.currentIndex < 0 || !state.layout) { return; }
         var layout = state.layout;
@@ -736,39 +755,103 @@
         var cpn = parseInt(el.nwtChannelsPerNode.value, 10) || layout.cpn;
         var absStart = layout.startChannel0 + state.currentIndex * cpn + 1;
         var absEnd = absStart + cpn - 1;
+
+        // Optional: which node actually lit up physically instead. Kept
+        // 0-based internally to match cam.assignment's convention, so a
+        // manually-built correction and a scan-built one can share the same
+        // buildCorrectedXModel() code. A note with no number here is just a
+        // comment - there's nothing to place, so it's left out of
+        // buildManualAssignment().
+        var actualNode = null;
+        var rawActual = el.nwtActualNode.value.trim();
+        if (rawActual !== '') {
+            var n = parseInt(rawActual, 10);
+            if (!Number.isFinite(n) || n < 1 || n > layout.nodeCount) {
+                showActualNodeError('Enter a node number between 1 and ' + layout.nodeCount + ', or leave it blank.');
+                return;
+            }
+            actualNode = n - 1;
+        }
+        showActualNodeError('');
+
         var entry = {
             time: new Date().toLocaleTimeString(),
             model: state.modelName,
             node: state.currentIndex + 1,
             pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + (state.currentIndex + 1)),
             channels: absStart + '-' + absEnd,
+            actualNode: actualNode,
             note: el.nwtMismatchNote.value || ''
         };
         mismatchLog.push(entry);
         el.nwtMismatchNote.value = '';
+        el.nwtActualNode.value = '';
         renderLog();
+        updateManualXModelButton();
     }
 
     function renderLog() {
         var tbody = el.nwtLogTable.querySelector('tbody');
         tbody.innerHTML = mismatchLog.map(function (e) {
+            var actualText = (typeof e.actualNode === 'number') ? ('Node ' + (e.actualNode + 1)) : '-';
             return '<tr><td>' + escapeHtml(e.time) + '</td><td>' + escapeHtml(e.model) + '</td><td>' +
                 e.node + '</td><td>' + escapeHtml(e.pos) + '</td><td>' + escapeHtml(e.channels) +
-                '</td><td>' + escapeHtml(e.note) + '</td></tr>';
+                '</td><td>' + escapeHtml(actualText) + '</td><td>' + escapeHtml(e.note) + '</td></tr>';
         }).join('');
     }
 
     function exportLog() {
         if (!mismatchLog.length) { return; }
-        var header = 'Time,Model,Node,ExpectedPosition,Channels,Note\n';
+        var header = 'Time,Model,Node,ExpectedPosition,Channels,ActualNode,Note\n';
         var rows = mismatchLog.map(function (e) {
-            return [e.time, e.model, e.node, e.pos, e.channels, e.note]
+            var actualText = (typeof e.actualNode === 'number') ? (e.actualNode + 1) : '';
+            return [e.time, e.model, e.node, e.pos, e.channels, actualText, e.note]
                 .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
         }).join('\n');
         var blob = new Blob([header + rows], { type: 'text/csv' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = 'node-wiring-test-log.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    // Assignment array (same shape as cam.assignment from an auto-scan:
+    // assignment[slot] = 0-based node actually sitting there) built from this
+    // log's manually-entered "actually lit" numbers for the current model,
+    // so a corrected .xmodel can be produced without ever running a camera
+    // scan. Slots nobody corrected keep their original wiring (identity).
+    function buildManualAssignment(layout) {
+        var assignment = new Array(layout.nodeCount);
+        for (var i = 0; i < layout.nodeCount; i++) { assignment[i] = i; }
+        var any = false;
+        mismatchLog.forEach(function (e) {
+            if (e.model !== state.modelName || typeof e.actualNode !== 'number') { return; }
+            if (e.node < 1 || e.node > layout.nodeCount) { return; }
+            assignment[e.node - 1] = e.actualNode;
+            any = true;
+        });
+        return any ? assignment : null;
+    }
+
+    function updateManualXModelButton() {
+        var layout = state.layout;
+        var ready = !!(layout && !layout.linear && buildManualAssignment(layout));
+        el.nwtDownloadManualXModel.disabled = !ready;
+    }
+
+    function downloadManualXModel() {
+        var layout = state.layout;
+        if (!layout) { return; }
+        var assignment = buildManualAssignment(layout);
+        if (!assignment) { return; }
+        var xml = buildCorrectedXModel(assignment);
+        if (!xml) { return; }
+        var blob = new Blob([xml], { type: 'application/xml' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (state.modelName || 'model') + '-corrected.xmodel';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1545,15 +1628,16 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    function buildCorrectedXModel() {
+    function buildCorrectedXModel(assignment) {
         var layout = state.layout;
-        if (!layout || layout.linear || !cam.assignment) { return null; }
+        assignment = assignment || cam.assignment;
+        if (!layout || layout.linear || !assignment) { return null; }
         var w = layout.visualWidth, h = layout.visualHeight;
         var grid = [];
         for (var y = 0; y < h; y++) { grid.push(new Array(w).fill(null)); }
         layout.nodePos.forEach(function (pos, slot) {
             if (!pos) { return; }
-            var physicalNode = cam.assignment[slot]; // 0-based node index actually sitting at this slot
+            var physicalNode = assignment[slot]; // 0-based node index actually sitting at this slot
             grid[pos.y][pos.x] = physicalNode + 1; // xLights dense format is 1-based node numbers
         });
 
@@ -1613,7 +1697,8 @@
     el.nwtStop.addEventListener('click', disableTest);
     el.nwtMarkMismatch.addEventListener('click', markMismatch);
     el.nwtExportLog.addEventListener('click', exportLog);
-    el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); });
+    el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); });
+    el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
 
     el.nwtCamSource.addEventListener('change', function () {
         // stopActiveCamera(), not stopCamera(): switching away from "stream"

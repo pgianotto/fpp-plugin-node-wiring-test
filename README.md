@@ -20,7 +20,10 @@ new network protocol, no extra daemon, nothing installed) so you can:
   the model's buffer (for models FPP can resolve a 2D layout for), and the
   absolute channel range being driven,
 - mark a node as mismatched with an optional note as you go, and export the
-  resulting list as a CSV checklist for fixing wiring afterward.
+  resulting list as a CSV checklist for fixing wiring afterward,
+- or, if you give the actual node number that lit up instead when marking a
+  mismatch, download a corrected `.xmodel` built straight from that log - no
+  camera needed at all.
 
 Point a camera at the prop (this device's own, or a USB camera physically
 attached to the FPP box) and the live video gets a live overlay of the
