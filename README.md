@@ -34,7 +34,10 @@ Every logged mismatch also rings live in the preview - amber for a plain
 note, magenta for one with a real correction - whether it came from marking
 a node by hand, a bulk range offset, or a scan, so you can see progress on a
 wiring fix at a glance. Shift+click a node in the preview to fill it in as
-the one that actually lit up, instead of typing its number.
+the one that actually lit up, instead of typing its number. Clicking is
+tolerant of a few pixels' miss (a cell can be well under normal mouse
+precision on a dense or sparse model), snapping to the nearest real node
+rather than requiring a pixel-perfect click.
 
 The plain layout preview has its own toolbar: a Front/Back toggle mirrors the
 display left/right for working from behind the prop (display only, never
