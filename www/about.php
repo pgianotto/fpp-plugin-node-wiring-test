@@ -25,6 +25,21 @@
                 checklist once you're done.
             </p>
             <p>
+                <b>A whole stretch shifted by a constant amount:</b> a common
+                wiring mistake - a miswired connector, or an extra/missing
+                prop spliced into a run - makes one entire stretch of nodes
+                all light up a constant number of nodes off from expected,
+                until the next strand/section corrects itself. Rather than
+                marking each one in that stretch by hand, use <b>Bulk-correct
+                a shifted range</b> (under the Mismatch log): give the first
+                and last node of the shifted stretch and the offset (e.g.
+                <code>4</code> if commanding node 50 actually lights what you
+                expected at node 54), and it fills that whole range in at
+                once, the same as marking each one individually would. Re-
+                applying it over the same range replaces its own earlier
+                entries rather than piling up duplicates.
+            </p>
+            <p>
                 <b>Jumping straight to a node:</b> besides stepping one at a
                 time, you can go directly to any node - type its number into
                 <b>Go to node</b> and press Enter or click <b>Go</b>, or just

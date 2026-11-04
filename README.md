@@ -24,7 +24,11 @@ new network protocol, no extra daemon, nothing installed) so you can:
   resulting list as a CSV checklist for fixing wiring afterward,
 - or, if you give the actual node number that lit up instead when marking a
   mismatch, download a corrected `.xmodel` built straight from that log - no
-  camera needed at all.
+  camera needed at all,
+- including bulk-correcting a whole stretch of nodes at once (the signature
+  of a miswired connector or a spliced-in prop: a run of nodes all shifted by
+  the same constant amount) by giving the range and the offset, instead of
+  marking each one in it individually.
 
 The plain layout preview has its own toolbar: a Front/Back toggle mirrors the
 display left/right for working from behind the prop (display only, never
