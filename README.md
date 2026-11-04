@@ -39,6 +39,15 @@ tolerant of a few pixels' miss (a cell can be well under normal mouse
 precision on a dense or sparse model), snapping to the nearest real node
 rather than requiring a pixel-perfect click.
 
+If your prop is based on a real commercial model, **Vendor model library**
+(under the Mismatch log) searches xLights' own vendor model list - the same
+one its Download Models dialog uses - and patches the corrected wiring
+straight into the genuine vendor `.xmodel`, so faces, states, and sub-models
+stay intact instead of being lost to a bare from-scratch export. The
+catalog is fetched and cached server-side (daily for the vendor list, 30
+days for individual model files), so it stays in sync with xLights' own
+list without needing a plugin update.
+
 The plain layout preview has its own toolbar: a Front/Back toggle mirrors the
 display left/right for working from behind the prop (display only, never
 changes wiring order or channels sent), a "Show wiring path" checkbox draws a

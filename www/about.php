@@ -165,6 +165,28 @@
                 without re-wiring anything.
             </p>
             <p>
+                <b>Keeping faces/states from a real commercial model:</b> the
+                "Download corrected .xmodel" buttons build a bare Custom
+                Model with nothing but position data - fine for a plain
+                prop, but it throws away faces, states, or sub-models a real
+                commercial model had. <b>Vendor model library</b> (under the
+                Mismatch log) searches xLights' own vendor model list - the
+                same one its Download Models dialog uses - for the real
+                model your prop is based on, fetches the genuine file, and
+                patches <em>only</em> the corrected wiring into it; every
+                other attribute and element (faces, states, sub-models, prop
+                type) stays exactly as the vendor built it. The vendor
+                model's dimensions have to match your installed model's
+                layout exactly, or patching is refused rather than risking a
+                corrupted file (a sign you picked the wrong model or wiring
+                option). Faces/states reference fixed node numbers, not
+                positions, so they don't automatically "follow" a node to
+                its corrected spot the way ordinary position-based effects
+                do - if a correction touches a node one of them references,
+                a note after downloading tells you which ones to re-check in
+                xLights' own Face/State editor.
+            </p>
+            <p>
                 <b>Limitations:</b> this only works for models with real 2D
                 geometry (not the plain wiring-order fallback strip), needs
                 decent, fairly even lighting/contrast between "off" and "on"
