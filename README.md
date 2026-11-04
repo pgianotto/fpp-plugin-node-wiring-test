@@ -30,6 +30,12 @@ new network protocol, no extra daemon, nothing installed) so you can:
   the same constant amount) by giving the range and the offset, instead of
   marking each one in it individually.
 
+Every logged mismatch also rings live in the preview - amber for a plain
+note, magenta for one with a real correction - whether it came from marking
+a node by hand, a bulk range offset, or a scan, so you can see progress on a
+wiring fix at a glance. Shift+click a node in the preview to fill it in as
+the one that actually lit up, instead of typing its number.
+
 The plain layout preview has its own toolbar: a Front/Back toggle mirrors the
 display left/right for working from behind the prop (display only, never
 changes wiring order or channels sent), a "Show wiring path" checkbox draws a

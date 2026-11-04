@@ -49,6 +49,17 @@
                 stepping to it with Prev/Next.
             </p>
             <p>
+                <b>Clicking to log a mismatch:</b> once you've stepped to the
+                node you're testing, <b>Shift+click</b> the node in the
+                preview that actually lit up on the real prop instead of
+                typing its number into the Actual-node field - a plain click
+                still commands/lights a node as above. Every node with a log
+                entry for the current model also gets a ring in the preview,
+                live as you mark things: amber for a plain note, magenta for
+                one with a real correction - so you can see your progress on
+                a wiring fix at a glance, without re-selecting the model.
+            </p>
+            <p>
                 <b>Preview toolbar:</b> above the plain layout preview,
                 <b>Front</b>/<b>Back</b> mirrors the layout left/right for
                 working from behind the prop (display only - it never changes
