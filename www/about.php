@@ -60,6 +60,20 @@
                 a wiring fix at a glance, without re-selecting the model.
             </p>
             <p>
+                <b>Live correction mode:</b> the <b>Live correction mode</b>
+                checkbox (next to Mark this node as mismatched) turns the
+                whole step-and-mark workflow into one motion: once it's on,
+                a plain click in the preview means "this is the node that
+                actually lit for the one I'm on" - it logs the correction
+                automatically (a click matching what's commanded logs
+                nothing, since there's no mismatch to record) and steps to
+                the next node by itself. No typing a number, no separate
+                Mark click - just step, look at the prop, click, repeated
+                down the whole thing. <b>Show node numbers</b> (with its Size
+                slider, next to the checkbox) makes it easy to read exactly
+                which node you clicked while doing this.
+            </p>
+            <p>
                 <b>Preview toolbar:</b> above the plain layout preview,
                 <b>Front</b>/<b>Back</b> mirrors the layout left/right for
                 working from behind the prop (display only - it never changes

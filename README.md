@@ -39,6 +39,13 @@ tolerant of a few pixels' miss (a cell can be well under normal mouse
 precision on a dense or sparse model), snapping to the nearest real node
 rather than requiring a pixel-perfect click.
 
+**Show node numbers** now defaults to a larger 150% size with a slider up to
+300%. **Live correction mode** (next to Mark this node as mismatched) turns
+stepping-and-marking into one motion: once on, a plain click in the preview
+means "this is the node that actually lit for the one I'm on" - it logs the
+correction (only when it disagrees) and steps to the next node by itself, so
+correcting a whole prop by eye is step -> look -> click, repeated.
+
 If your prop is based on a real commercial model, **Vendor model library**
 (under the Mismatch log) searches xLights' own vendor model list - the same
 one its Download Models dialog uses - and patches the corrected wiring
