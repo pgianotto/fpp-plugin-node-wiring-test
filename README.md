@@ -28,9 +28,10 @@ new network protocol, no extra daemon, nothing installed) so you can:
 The plain layout preview has its own toolbar: a Front/Back toggle mirrors the
 display left/right for working from behind the prop (display only, never
 changes wiring order or channels sent), a "Show wiring path" checkbox draws a
-line through the nodes in real wiring order, zoom buttons (or Ctrl/Cmd+scroll
-over the preview) zoom in on dense models, and hovering any node shows its
-number in a tooltip.
+line through the nodes in real wiring order, a "Show node numbers" checkbox
+labels every node at once (once zoomed in enough to read them), zoom buttons
+(or Ctrl/Cmd+scroll over the preview) zoom in on dense models, and hovering
+any node shows its number in a tooltip.
 
 Point a camera at the prop (this device's own, or a USB camera physically
 attached to the FPP box) and the live video gets a live overlay of the

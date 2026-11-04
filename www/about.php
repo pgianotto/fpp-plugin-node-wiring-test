@@ -31,9 +31,12 @@
                 wiring order or channels); <b>Show wiring path</b> draws a
                 line connecting nodes in real wiring order (0, 1, 2, ...) so
                 you can see the physical wire run, not just where each node
-                sits; and the zoom controls (or Ctrl/Cmd+scroll over the
-                preview) zoom in on dense models - very large models are
-                capped in how far they can zoom to avoid an oversized canvas.
+                sits; <b>Show node numbers</b> labels every node at once
+                (once zoomed in enough to actually read them - a hint appears
+                if it's too small, rather than drawing unreadable text); and
+                the zoom controls (or Ctrl/Cmd+scroll over the preview) zoom
+                in on dense models - very large models are capped in how far
+                they can zoom to avoid an oversized canvas.
                 Hover any node in the preview to see its number in a tooltip,
                 handy for filling in "Node that actually lit" above without
                 losing count.

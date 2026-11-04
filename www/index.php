@@ -118,6 +118,10 @@
         <label for="nwtShowWiring" style="font-weight:normal;">
             <input type="checkbox" id="nwtShowWiring"> Show wiring path
         </label>
+        <label for="nwtShowNumbers" style="font-weight:normal;">
+            <input type="checkbox" id="nwtShowNumbers"> Show node numbers
+        </label>
+        <span id="nwtNumbersTooSmallHint" class="nwtLinearNote" style="margin:0;display:none;">(zoom in further to read them)</span>
         <span class="nwtRow" style="gap:0.2em;margin-bottom:0;">
             <button type="button" id="nwtZoomOut" title="Zoom out">&minus;</button>
             <span id="nwtZoomLevel">100%</span>
@@ -266,7 +270,8 @@
         // a chosen zoom/view persists while stepping through one prop.
         viewSide: 'front',    // 'front' | 'back' - 'back' mirrors left/right
         zoomPercent: 100,
-        showWiringPath: false
+        showWiringPath: false,
+        showNodeNumbers: false
     };
     var mismatchLog = [];
 
@@ -322,7 +327,7 @@
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
-     'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
+     'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
@@ -711,6 +716,38 @@
             var cur = layout.nodePos[state.currentIndex];
             drawNode(cur.x, cur.y, true);
         }
+
+        if (state.showNodeNumbers) { drawNodeNumbers(ctx, layout, cell); }
+        updateNumbersTooSmallHint(cell);
+    }
+
+    // Below this cell size a number wouldn't be legible anyway (and with
+    // thousands of nodes, drawing unreadable text for all of them is wasted
+    // work) - skip the text entirely and let updateNumbersTooSmallHint() tell
+    // the user to zoom in instead.
+    var MIN_CELL_FOR_NUMBERS = 14;
+
+    function drawNodeNumbers(ctx, layout, cell) {
+        if (cell < MIN_CELL_FOR_NUMBERS) { return; }
+        ctx.font = Math.max(8, Math.floor(cell * 0.38)) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(1, cell * 0.1);
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = '#fff';
+        layout.nodePos.forEach(function (pos, idx) {
+            if (!pos) { return; }
+            var px = displayX(layout, pos.x) * cell + cell / 2;
+            var py = pos.y * cell + cell / 2;
+            var label = String(idx + 1);
+            ctx.strokeText(label, px, py);
+            ctx.fillText(label, px, py);
+        });
+    }
+
+    function updateNumbersTooSmallHint(cell) {
+        el.nwtNumbersTooSmallHint.style.display =
+            (state.showNodeNumbers && cell < MIN_CELL_FOR_NUMBERS) ? '' : 'none';
     }
 
     // Connects nodes in real wiring order (0, 1, 2, ...) so the physical
@@ -1875,6 +1912,10 @@
     el.nwtViewBack.addEventListener('click', function () { setViewSide('back'); });
     el.nwtShowWiring.addEventListener('change', function () {
         state.showWiringPath = el.nwtShowWiring.checked;
+        drawGridCanvas();
+    });
+    el.nwtShowNumbers.addEventListener('change', function () {
+        state.showNodeNumbers = el.nwtShowNumbers.checked;
         drawGridCanvas();
     });
     el.nwtZoomIn.addEventListener('click', function () { setZoom(state.zoomPercent + ZOOM_STEP); });
