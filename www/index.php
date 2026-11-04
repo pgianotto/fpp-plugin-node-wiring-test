@@ -44,6 +44,13 @@
 .nwtApp details > summary { cursor: pointer; font-weight: 600; color: var(--bs-secondary-color); }
 .nwtApp details[open] > summary { margin-bottom: 0.6em; }
 #nwtPreviewWrap { margin-bottom: 0.8em; }
+.nwtToggleGroup { display: inline-flex; border: 1px solid var(--bs-border-color); border-radius: 4px; overflow: hidden; }
+.nwtToggleGroup button { padding: 0.25em 0.8em; border: none; border-right: 1px solid var(--bs-border-color); background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+.nwtToggleGroup button:last-child { border-right: none; }
+.nwtToggleGroup button.active { background: var(--bs-primary); color: var(--bs-light); }
+#nwtGridTooltip { position: fixed; z-index: 2000; pointer-events: none; background: var(--bs-dark); color: var(--bs-light); border: 1px solid var(--bs-border-color); border-radius: 3px; padding: 0.15em 0.5em; font-size: 0.85em; font-weight: 600; }
+#nwtGridCanvas { cursor: crosshair; }
+#nwtZoomLevel { min-width: 3.5em; text-align: center; display: inline-block; }
 </style>
 
 <div class="nwtApp">
@@ -103,10 +110,32 @@
     </div>
 
     <h3>Preview</h3>
+    <div class="nwtRow" id="nwtPreviewToolbar">
+        <div class="nwtToggleGroup" role="group" aria-label="Front or back view">
+            <button type="button" id="nwtViewFront" class="active">Front</button>
+            <button type="button" id="nwtViewBack">Back</button>
+        </div>
+        <label for="nwtShowWiring" style="font-weight:normal;">
+            <input type="checkbox" id="nwtShowWiring"> Show wiring path
+        </label>
+        <span class="nwtRow" style="gap:0.2em;margin-bottom:0;">
+            <button type="button" id="nwtZoomOut" title="Zoom out">&minus;</button>
+            <span id="nwtZoomLevel">100%</span>
+            <button type="button" id="nwtZoomIn" title="Zoom in">+</button>
+            <button type="button" id="nwtZoomReset" title="Reset zoom">Reset</button>
+        </span>
+    </div>
+    <p class="nwtNote" id="nwtPreviewToolbarNote">
+        Mouse over a node below to see its number - handy for logging "node
+        that actually lit" above without losing count. Back mirrors the
+        layout left/right for working from behind the prop; it's a display
+        option only and doesn't change wiring order or channels.
+    </p>
     <div id="nwtPreviewWrap">
         <div id="nwtGridWrap">
             <canvas id="nwtGridCanvas" style="display:none;"></canvas>
             <div id="nwtGridPlaceholder"></div>
+            <div id="nwtGridTooltip" style="display:none;"></div>
         </div>
         <div id="nwtCamWrap">
             <video id="nwtCamVideo" autoplay playsinline muted></video>
@@ -230,7 +259,14 @@
         layout: null,         // { nodeCount, cpn, startChannel0, visualWidth, visualHeight, nodePos: [{x,y}|null], linear: bool }
         currentIndex: -1,     // 0-based node index currently commanded, or -1
         playTimer: null,
-        testActive: false
+        testActive: false,
+        // Grid preview display options - a presentation layer over the
+        // layout/node data, never changing wiring order, channels, or
+        // anything sent to fppd. Kept at top level (not reset per-model) so
+        // a chosen zoom/view persists while stepping through one prop.
+        viewSide: 'front',    // 'front' | 'back' - 'back' mirrors left/right
+        zoomPercent: 100,
+        showWiringPath: false
     };
     var mismatchLog = [];
 
@@ -286,6 +322,7 @@
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
+     'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
@@ -553,15 +590,44 @@
     // ---- Grid rendering (canvas-based so even large real props, like a
     // 100k+ cell RGB matrix, render at a small cell size instead of falling
     // back to a plain strip) ------------------------------------------
-    var gridRender = null; // { layout, cell, cellByPos: {"x,y": nodeIdx} }
+    var gridRender = null; // { layout, baseCell, cellByPos: {"x,y": nodeIdx} }
     var MAX_GRID_CANVAS_W = 1000, MAX_GRID_CANVAS_H = 640;
+    // Zoom is a target percentage of the base (fit-to-view) cell size, but
+    // the actual cell size used is also capped by this canvas-area budget
+    // (~12 megapixels) regardless of the zoom setting - without it, zooming
+    // in on a very large model (the 20,736-node Matrix model from earlier
+    // testing, say) could ask the browser for an enormous canvas and run out
+    // of memory. Large models simply can't zoom as far in as small ones.
+    var MAX_GRID_CANVAS_AREA = 12000000;
+    var ZOOM_MIN = 25, ZOOM_MAX = 800, ZOOM_STEP = 25;
 
     function renderGridPlaceholder(msg) {
         el.nwtGridCanvas.style.display = 'none';
         el.nwtGridPlaceholder.style.display = '';
         el.nwtGridPlaceholder.textContent = msg;
         el.nwtLinearNote.style.display = 'none';
+        hideGridTooltip();
         gridRender = null;
+    }
+
+    function baseCellFor(layout) {
+        return Math.max(1, Math.min(16, Math.floor(Math.min(
+            MAX_GRID_CANVAS_W / layout.visualWidth,
+            MAX_GRID_CANVAS_H / layout.visualHeight
+        ))));
+    }
+
+    function effectiveCellFor(layout) {
+        var desired = Math.round(baseCellFor(layout) * (state.zoomPercent / 100));
+        var maxByArea = Math.max(1, Math.floor(Math.sqrt(MAX_GRID_CANVAS_AREA / (layout.visualWidth * layout.visualHeight))));
+        return Math.max(1, Math.min(desired, maxByArea));
+    }
+
+    // Display-only left/right mirror for "Back" view - flips which pixel
+    // column a node's own (unchanged) x position is drawn at. Never touches
+    // layout.nodePos, wiring order, or channel math.
+    function displayX(layout, x) {
+        return (state.viewSide === 'back') ? (layout.visualWidth - 1 - x) : x;
     }
 
     function renderGrid(layout) {
@@ -574,20 +640,19 @@
             if (pos) { cellByPos[pos.x + ',' + pos.y] = idx; }
         });
 
-        var cell = Math.max(1, Math.min(16, Math.floor(Math.min(
-            MAX_GRID_CANVAS_W / layout.visualWidth,
-            MAX_GRID_CANVAS_H / layout.visualHeight
-        ))));
-        el.nwtGridCanvas.width = layout.visualWidth * cell;
-        el.nwtGridCanvas.height = layout.visualHeight * cell;
-
-        gridRender = { layout: layout, cell: cell, cellByPos: cellByPos };
+        gridRender = { layout: layout, cellByPos: cellByPos };
+        updateZoomLevelLabel();
         drawGridCanvas();
     }
 
     function drawGridCanvas() {
         if (!gridRender) { return; }
-        var layout = gridRender.layout, cell = gridRender.cell, cellByPos = gridRender.cellByPos;
+        var layout = gridRender.layout, cellByPos = gridRender.cellByPos;
+        var cell = effectiveCellFor(layout);
+        gridRender.cell = cell;
+        el.nwtGridCanvas.width = layout.visualWidth * cell;
+        el.nwtGridCanvas.height = layout.visualHeight * cell;
+
         var ctx = el.nwtGridCanvas.getContext('2d');
         var gap = cell > 3 ? 1 : 0;
         ctx.fillStyle = '#111';
@@ -597,9 +662,67 @@
                 var nodeIdx = cellByPos[x + ',' + y];
                 if (nodeIdx === undefined) { continue; }
                 ctx.fillStyle = (nodeIdx === state.currentIndex) ? '#fff' : '#3a3a3a';
-                ctx.fillRect(x * cell, y * cell, cell - gap, cell - gap);
+                ctx.fillRect(displayX(layout, x) * cell, y * cell, cell - gap, cell - gap);
             }
         }
+
+        if (state.showWiringPath) { drawWiringPath(ctx, layout, cell); }
+    }
+
+    // Connects nodes in real wiring order (0, 1, 2, ...) so the physical
+    // wire path is visible, not just where each node sits - toggleable since
+    // it gets busy fast on anything but a small/simple model.
+    function drawWiringPath(ctx, layout, cell) {
+        ctx.strokeStyle = 'rgba(255,165,0,0.75)';
+        ctx.lineWidth = Math.max(1, Math.min(2, cell / 8));
+        ctx.beginPath();
+        var started = false;
+        layout.nodePos.forEach(function (pos) {
+            if (!pos) { return; }
+            var px = displayX(layout, pos.x) * cell + cell / 2;
+            var py = pos.y * cell + cell / 2;
+            if (!started) { ctx.moveTo(px, py); started = true; } else { ctx.lineTo(px, py); }
+        });
+        if (started) { ctx.stroke(); }
+    }
+
+    function updateZoomLevelLabel() { el.nwtZoomLevel.textContent = state.zoomPercent + '%'; }
+
+    function setZoom(percent) {
+        state.zoomPercent = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, percent));
+        updateZoomLevelLabel();
+        drawGridCanvas();
+    }
+
+    function setViewSide(side) {
+        state.viewSide = side;
+        el.nwtViewFront.classList.toggle('active', side === 'front');
+        el.nwtViewBack.classList.toggle('active', side === 'back');
+        drawGridCanvas();
+    }
+
+    function hideGridTooltip() { el.nwtGridTooltip.style.display = 'none'; }
+
+    function onGridCanvasMouseMove(evt) {
+        if (!gridRender) { return; }
+        var layout = gridRender.layout, cell = gridRender.cell;
+        var cellX = Math.floor(evt.offsetX / cell);
+        var cellY = Math.floor(evt.offsetY / cell);
+        if (cellX < 0 || cellY < 0 || cellX >= layout.visualWidth || cellY >= layout.visualHeight) {
+            hideGridTooltip();
+            return;
+        }
+        // Reverse the "Back" mirror to find which source column was under the cursor.
+        var sourceX = (state.viewSide === 'back') ? (layout.visualWidth - 1 - cellX) : cellX;
+        var nodeIdx = gridRender.cellByPos[sourceX + ',' + cellY];
+        if (nodeIdx === undefined) {
+            hideGridTooltip();
+            return;
+        }
+        el.nwtGridTooltip.textContent = 'Node ' + (nodeIdx + 1);
+        el.nwtGridTooltip.style.left = (evt.clientX + 14) + 'px';
+        el.nwtGridTooltip.style.top = (evt.clientY + 14) + 'px';
+        el.nwtGridTooltip.style.display = '';
     }
 
     function highlightCurrent() {
@@ -608,10 +731,14 @@
         var pos = gridRender.layout.nodePos[state.currentIndex];
         if (!pos) { return; }
         var cell = gridRender.cell;
+        var targetX = displayX(gridRender.layout, pos.x) * cell;
         var targetY = pos.y * cell;
         var wrap = el.nwtGridWrap;
         if (targetY < wrap.scrollTop || targetY > wrap.scrollTop + wrap.clientHeight - cell) {
             wrap.scrollTop = Math.max(0, targetY - wrap.clientHeight / 2);
+        }
+        if (targetX < wrap.scrollLeft || targetX > wrap.scrollLeft + wrap.clientWidth - cell) {
+            wrap.scrollLeft = Math.max(0, targetX - wrap.clientWidth / 2);
         }
     }
 
@@ -1699,6 +1826,25 @@
     el.nwtExportLog.addEventListener('click', exportLog);
     el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
+
+    el.nwtViewFront.addEventListener('click', function () { setViewSide('front'); });
+    el.nwtViewBack.addEventListener('click', function () { setViewSide('back'); });
+    el.nwtShowWiring.addEventListener('change', function () {
+        state.showWiringPath = el.nwtShowWiring.checked;
+        drawGridCanvas();
+    });
+    el.nwtZoomIn.addEventListener('click', function () { setZoom(state.zoomPercent + ZOOM_STEP); });
+    el.nwtZoomOut.addEventListener('click', function () { setZoom(state.zoomPercent - ZOOM_STEP); });
+    el.nwtZoomReset.addEventListener('click', function () { setZoom(100); });
+    el.nwtGridCanvas.addEventListener('mousemove', onGridCanvasMouseMove);
+    el.nwtGridCanvas.addEventListener('mouseleave', hideGridTooltip);
+    // Ctrl/Cmd+wheel to zoom, so a plain scroll over the preview still just
+    // scrolls the wrap (consistent with every other scrollable area on the page).
+    el.nwtGridWrap.addEventListener('wheel', function (evt) {
+        if (!evt.ctrlKey && !evt.metaKey) { return; }
+        evt.preventDefault();
+        setZoom(state.zoomPercent + (evt.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+    }, { passive: false });
 
     el.nwtCamSource.addEventListener('change', function () {
         // stopActiveCamera(), not stopCamera(): switching away from "stream"

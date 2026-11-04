@@ -25,6 +25,20 @@
                 checklist once you're done.
             </p>
             <p>
+                <b>Preview toolbar:</b> above the plain layout preview,
+                <b>Front</b>/<b>Back</b> mirrors the layout left/right for
+                working from behind the prop (display only - it never changes
+                wiring order or channels); <b>Show wiring path</b> draws a
+                line connecting nodes in real wiring order (0, 1, 2, ...) so
+                you can see the physical wire run, not just where each node
+                sits; and the zoom controls (or Ctrl/Cmd+scroll over the
+                preview) zoom in on dense models - very large models are
+                capped in how far they can zoom to avoid an oversized canvas.
+                Hover any node in the preview to see its number in a tooltip,
+                handy for filling in "Node that actually lit" above without
+                losing count.
+            </p>
+            <p>
                 <b>Geometry support:</b> models using a simple horizontal or
                 vertical string layout, and "Custom" models with a dense or
                 compressed node map, are drawn to their real x/y layout. Very
