@@ -133,8 +133,13 @@
         <span style="color:#2ecc71;font-weight:600;">&#9679; Node 1</span> is
         the start of the wire, <span style="color:#ff4d4d;font-weight:600;">&#9679; the last node</span>
         is its end - the rest are blue, and the one currently lit is shown
-        bigger in white. Mouse over a node to see its number - handy for
-        logging "node that actually lit" above without losing count. Back
+        bigger in white. <b>Click</b> a node to light it; <b>Shift+click</b> a
+        node to fill it in as the one that actually lit, instead of typing
+        its number. A <span style="color:#ffa500;font-weight:600;">&#9711;
+        orange ring</span> means a node has a note logged against it, a
+        <span style="color:#ff2fd0;font-weight:600;">&#9711; magenta ring</span>
+        means it has a real correction - both update live as you mark nodes
+        or apply a range below. Mouse over a node to see its number. Back
         mirrors the layout left/right for working from behind the prop; it's
         a display option only and doesn't change wiring order or channels.
     </p>
@@ -773,6 +778,16 @@
             drawNode(layout.nodePos[lastIndex].x, layout.nodePos[lastIndex].y, lastIndex, false);
         }
 
+        // Ring every node that has a mismatch-log entry for this model -
+        // live, so marking one by hand, applying a bulk range offset, or a
+        // scan all show up on this preview immediately without needing to
+        // re-select the model. A plain note (no "actually lit" number) rings
+        // amber, since it's just a flag; an entry with a real correction
+        // rings magenta, matching nothing else already drawn here. Drawn
+        // over everything but the current node, so a corrected node you've
+        // stepped to still shows its ring around the bigger white dot.
+        drawMismatchMarkers(ctx, layout, cell, radius);
+
         if (state.currentIndex >= 0 && layout.nodePos[state.currentIndex]) {
             var cur = layout.nodePos[state.currentIndex];
             drawNode(cur.x, cur.y, state.currentIndex, true);
@@ -780,6 +795,38 @@
 
         if (state.showNodeNumbers) { drawNodeNumbers(ctx, layout, cell); }
         updateNumbersTooSmallHint(cell);
+    }
+
+    var MISMATCH_NOTE_COLOR = '#ffa500', MISMATCH_CORRECTED_COLOR = '#ff2fd0';
+
+    // Last log entry per node (for the current model) decides its marker -
+    // consistent with buildManualAssignment()'s own last-write-wins rule, so
+    // the preview never disagrees with what the exported .xmodel would do.
+    function latestMismatchByNode(layout) {
+        var info = {};
+        mismatchLog.forEach(function (e) {
+            if (e.model !== state.modelName || e.node < 1 || e.node > layout.nodeCount) { return; }
+            info[e.node - 1] = typeof e.actualNode === 'number';
+        });
+        return info;
+    }
+
+    function drawMismatchMarkers(ctx, layout, cell, radius) {
+        var info = latestMismatchByNode(layout);
+        var keys = Object.keys(info);
+        if (!keys.length) { return; }
+        ctx.lineWidth = Math.max(1.5, cell * 0.12);
+        keys.forEach(function (key) {
+            var idx = parseInt(key, 10);
+            var pos = layout.nodePos[idx];
+            if (!pos) { return; }
+            var px = displayX(layout, pos.x) * cell + cell / 2;
+            var py = pos.y * cell + cell / 2;
+            ctx.beginPath();
+            ctx.arc(px, py, radius + ctx.lineWidth, 0, Math.PI * 2);
+            ctx.strokeStyle = info[key] ? MISMATCH_CORRECTED_COLOR : MISMATCH_NOTE_COLOR;
+            ctx.stroke();
+        });
     }
 
     // Below this cell size a number wouldn't be legible anyway (and with
@@ -879,6 +926,16 @@
     function onGridCanvasClick(evt) {
         var nodeIdx = nodeIndexAtCanvasEvent(evt);
         if (nodeIdx === undefined) { return; }
+        // Shift+click: "this is the node that actually lit" - fills the
+        // mismatch form's Actual-node field from the preview instead of
+        // typing a number, without moving off the node currently being
+        // tested. A plain click still commands/lights that node as before.
+        if (evt.shiftKey) {
+            el.nwtActualNode.value = nodeIdx + 1;
+            showActualNodeError('');
+            el.nwtActualNode.focus();
+            return;
+        }
         stopPlayback();
         goToNode(nodeIdx);
     }
@@ -1086,6 +1143,7 @@
         el.nwtActualNode.value = '';
         renderLog();
         updateManualXModelButton();
+        drawGridCanvas();
     }
 
     function renderLog() {
@@ -1173,6 +1231,7 @@
 
         renderLog();
         updateManualXModelButton();
+        drawGridCanvas();
         el.nwtLogDetails.open = true;
 
         var msg = 'Applied to ' + applied + ' node' + (applied === 1 ? '' : 's') + '.';
@@ -1744,12 +1803,14 @@
                 node: i + 1,
                 pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + (i + 1)),
                 channels: (range.absStart + 1) + '-' + (range.absEnd + 1),
+                actualNode: assigned,
                 note: 'Auto-scan: node ' + (assigned + 1) + ' physically here instead',
                 source: 'scan'
             });
             count++;
         }
         renderLog();
+        drawGridCanvas();
         if (count > 0) { el.nwtLogDetails.open = true; } // surface it rather than leaving it silently collapsed
         return count;
     }
@@ -2061,7 +2122,7 @@
     el.nwtStop.addEventListener('click', disableTest);
     el.nwtMarkMismatch.addEventListener('click', markMismatch);
     el.nwtExportLog.addEventListener('click', exportLog);
-    el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); });
+    el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); drawGridCanvas(); });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
     el.nwtApplyRangeOffset.addEventListener('click', applyRangeOffset);
 
