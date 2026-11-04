@@ -22,7 +22,7 @@
 .nwtInfoBox { border: 1px solid var(--bs-border-color); border-radius: 4px; padding: 0.6em 1em; margin: 0.8em 0; background: var(--bs-tertiary-bg); }
 .nwtInfoBox .nwtInfoLine { margin: 0.15em 0; }
 .nwtInfoBox .nwtMismatchFlag { color: var(--bs-danger); font-weight: 600; }
-#nwtGridWrap { overflow: auto; border: 1px solid var(--bs-border-color); padding: 10px; margin-bottom: 1em; max-height: 480px; background: var(--bs-dark); }
+#nwtGridWrap { overflow: auto; border: 1px solid var(--bs-border-color); padding: 10px; margin-bottom: 1em; height: 560px; background: var(--bs-dark); position: relative; }
 #nwtGridCanvas { display: block; }
 #nwtGridPlaceholder { color: var(--bs-light); padding: 1em; }
 .nwtLinearNote { color: var(--bs-secondary-color); font-size: 0.85em; margin-top: -0.4em; margin-bottom: 0.6em; }
@@ -591,7 +591,12 @@
     // 100k+ cell RGB matrix, render at a small cell size instead of falling
     // back to a plain strip) ------------------------------------------
     var gridRender = null; // { layout, baseCell, cellByPos: {"x,y": nodeIdx} }
-    var MAX_GRID_CANVAS_W = 1000, MAX_GRID_CANVAS_H = 640;
+    // Fallback area, used only before #nwtGridWrap has ever been laid out
+    // (clientWidth/Height still 0, e.g. while it's display:none behind the
+    // camera view) - real sizing below measures the wrap itself.
+    var FALLBACK_GRID_CANVAS_W = 1000, FALLBACK_GRID_CANVAS_H = 480;
+    var GRID_WRAP_PADDING = 20; // #nwtGridWrap's CSS padding, both axes - must come out of clientWidth/Height to get the canvas's actual usable box
+    var MAX_BASE_CELL = 40; // how big a "fit to window" dot is allowed to get on a small model
     // Zoom is a target percentage of the base (fit-to-view) cell size, but
     // the actual cell size used is also capped by this canvas-area budget
     // (~12 megapixels) regardless of the zoom setting - without it, zooming
@@ -610,10 +615,23 @@
         gridRender = null;
     }
 
+    // The box the canvas actually has to fit in without the wrap needing to
+    // scroll - measured live (not a fixed constant) so "100% zoom" really
+    // means "the whole model fits, no vertical scrollbar" regardless of
+    // window size, matching #nwtGridWrap's real rendered height instead of a
+    // guessed number that could be smaller or larger than its CSS max-height.
+    function availableGridArea() {
+        var wrap = el.nwtGridWrap;
+        var w = wrap.clientWidth || FALLBACK_GRID_CANVAS_W;
+        var h = wrap.clientHeight || FALLBACK_GRID_CANVAS_H;
+        return { w: Math.max(50, w - GRID_WRAP_PADDING), h: Math.max(50, h - GRID_WRAP_PADDING) };
+    }
+
     function baseCellFor(layout) {
-        return Math.max(1, Math.min(16, Math.floor(Math.min(
-            MAX_GRID_CANVAS_W / layout.visualWidth,
-            MAX_GRID_CANVAS_H / layout.visualHeight
+        var area = availableGridArea();
+        return Math.max(1, Math.min(MAX_BASE_CELL, Math.floor(Math.min(
+            area.w / layout.visualWidth,
+            area.h / layout.visualHeight
         ))));
     }
 
@@ -654,19 +672,45 @@
         el.nwtGridCanvas.height = layout.visualHeight * cell;
 
         var ctx = el.nwtGridCanvas.getContext('2d');
-        var gap = cell > 3 ? 1 : 0;
         ctx.fillStyle = '#111';
         ctx.fillRect(0, 0, el.nwtGridCanvas.width, el.nwtGridCanvas.height);
+
+        // Round "node points" rather than filled squares - easier to pick
+        // out against the dark background and matches the dots the camera
+        // overlay already draws elsewhere on this page. A bright sky-blue
+        // for normal nodes (visible on the near-black background without
+        // being confused for the camera overlay's green/red match/mismatch
+        // colors) with a faint outline for contrast; the current node is
+        // drawn separately, last, so it's never covered by a neighbor.
+        var radius = Math.max(2, cell * 0.42);
+        function drawNode(x, y, isCurrent) {
+            var px = displayX(layout, x) * cell + cell / 2;
+            var py = y * cell + cell / 2;
+            ctx.beginPath();
+            ctx.arc(px, py, isCurrent ? radius * 1.6 : radius, 0, Math.PI * 2);
+            ctx.fillStyle = isCurrent ? '#fff' : '#4da3ff';
+            ctx.fill();
+            if (cell > 5) {
+                ctx.lineWidth = isCurrent ? 2 : 1;
+                ctx.strokeStyle = isCurrent ? '#ffce00' : 'rgba(0,0,0,0.6)';
+                ctx.stroke();
+            }
+        }
+
         for (var y = 0; y < layout.visualHeight; y++) {
             for (var x = 0; x < layout.visualWidth; x++) {
                 var nodeIdx = cellByPos[x + ',' + y];
-                if (nodeIdx === undefined) { continue; }
-                ctx.fillStyle = (nodeIdx === state.currentIndex) ? '#fff' : '#3a3a3a';
-                ctx.fillRect(displayX(layout, x) * cell, y * cell, cell - gap, cell - gap);
+                if (nodeIdx === undefined || nodeIdx === state.currentIndex) { continue; }
+                drawNode(x, y, false);
             }
         }
 
         if (state.showWiringPath) { drawWiringPath(ctx, layout, cell); }
+
+        if (state.currentIndex >= 0 && layout.nodePos[state.currentIndex]) {
+            var cur = layout.nodePos[state.currentIndex];
+            drawNode(cur.x, cur.y, true);
+        }
     }
 
     // Connects nodes in real wiring order (0, 1, 2, ...) so the physical
@@ -1845,6 +1889,10 @@
         evt.preventDefault();
         setZoom(state.zoomPercent + (evt.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
     }, { passive: false });
+    // Base ("100%") cell size is fit to the wrap's live measured box, so a
+    // window resize (or rotating a tablet) changes what "fits with no
+    // scrollbar" means - redraw to match.
+    window.addEventListener('resize', function () { if (gridRender) { drawGridCanvas(); } });
 
     el.nwtCamSource.addEventListener('change', function () {
         // stopActiveCamera(), not stopCamera(): switching away from "stream"
