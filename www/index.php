@@ -173,6 +173,12 @@
         <input type="number" id="nwtIntervalMs" min="100" max="10000" step="100" value="750" style="width:5.5em;">
         <span class="nwtStatus" id="nwtStatus">Idle</span>
     </div>
+    <div class="nwtRow">
+        <label for="nwtGoToNode">Go to node:</label>
+        <input type="number" id="nwtGoToNode" min="1" placeholder="#" style="width:5.5em;" disabled>
+        <button id="nwtGoToNodeBtn" type="button" disabled>Go</button>
+        <span class="nwtLinearNote" style="margin:0;">...or click a node directly in the preview below.</span>
+    </div>
 
     <div class="nwtInfoBox" id="nwtInfoBox" style="display:none;">
         <div class="nwtInfoLine"><b>Node:</b> <span id="nwtInfoNode"></span></div>
@@ -327,7 +333,7 @@
     // ---- DOM handles ---------------------------------------------------
     var el = {};
     ['nwtModel', 'nwtRefreshModels', 'nwtChannelsPerNode', 'nwtColor', 'nwtWhiteWrap', 'nwtWhite',
-     'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus',
+     'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus', 'nwtGoToNode', 'nwtGoToNodeBtn',
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
      'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
@@ -812,18 +818,26 @@
 
     function hideGridTooltip() { el.nwtGridTooltip.style.display = 'none'; }
 
-    function onGridCanvasMouseMove(evt) {
-        if (!gridRender) { return; }
+    // Shared by hover (tooltip) and click (select node) - returns the 0-based
+    // node index under a canvas mouse/click event, or undefined if the
+    // cursor isn't over a node (an empty cell, or outside the grid).
+    function nodeIndexAtCanvasEvent(evt) {
+        if (!gridRender) { return undefined; }
         var layout = gridRender.layout, cell = gridRender.cell;
         var cellX = Math.floor(evt.offsetX / cell);
         var cellY = Math.floor(evt.offsetY / cell);
         if (cellX < 0 || cellY < 0 || cellX >= layout.visualWidth || cellY >= layout.visualHeight) {
-            hideGridTooltip();
-            return;
+            return undefined;
         }
         // Reverse the "Back" mirror to find which source column was under the cursor.
         var sourceX = (state.viewSide === 'back') ? (layout.visualWidth - 1 - cellX) : cellX;
-        var nodeIdx = gridRender.cellByPos[sourceX + ',' + cellY];
+        return gridRender.cellByPos[sourceX + ',' + cellY];
+    }
+
+    function onGridCanvasMouseMove(evt) {
+        if (!gridRender) { return; }
+        var layout = gridRender.layout;
+        var nodeIdx = nodeIndexAtCanvasEvent(evt);
         if (nodeIdx === undefined) {
             hideGridTooltip();
             return;
@@ -833,6 +847,13 @@
         el.nwtGridTooltip.style.left = (evt.clientX + 14) + 'px';
         el.nwtGridTooltip.style.top = (evt.clientY + 14) + 'px';
         el.nwtGridTooltip.style.display = '';
+    }
+
+    function onGridCanvasClick(evt) {
+        var nodeIdx = nodeIndexAtCanvasEvent(evt);
+        if (nodeIdx === undefined) { return; }
+        stopPlayback();
+        goToNode(nodeIdx);
     }
 
     function highlightCurrent() {
@@ -929,6 +950,19 @@
     function stepNext() { goToNode(state.currentIndex + 1 < 0 ? 0 : state.currentIndex + 1); }
     function stepPrev() { goToNode(state.currentIndex - 1); }
 
+    function goToNodeFromInput() {
+        if (!state.layout || state.layout.nodeCount <= 0) { return; }
+        var raw = el.nwtGoToNode.value.trim();
+        if (raw === '') { return; }
+        var n = parseInt(raw, 10);
+        if (!Number.isFinite(n) || n < 1 || n > state.layout.nodeCount) {
+            setStatus('Enter a node number between 1 and ' + state.layout.nodeCount + '.', false);
+            return;
+        }
+        stopPlayback();
+        goToNode(n - 1);
+    }
+
     function startPlayback() {
         if (state.playTimer) { return; }
         if (state.currentIndex < 0) { state.currentIndex = -1; }
@@ -975,7 +1009,7 @@
     }
 
     function setControlsEnabled(enabled) {
-        [el.nwtPrev, el.nwtPlay, el.nwtNext, el.nwtStop].forEach(function (b) { b.disabled = !enabled; });
+        [el.nwtPrev, el.nwtPlay, el.nwtNext, el.nwtStop, el.nwtGoToNode, el.nwtGoToNodeBtn].forEach(function (b) { b.disabled = !enabled; });
     }
 
     // ---- Mismatch log -----------------------------------------------
@@ -1952,6 +1986,11 @@
     el.nwtZoomReset.addEventListener('click', function () { setZoom(100); });
     el.nwtGridCanvas.addEventListener('mousemove', onGridCanvasMouseMove);
     el.nwtGridCanvas.addEventListener('mouseleave', hideGridTooltip);
+    el.nwtGridCanvas.addEventListener('click', onGridCanvasClick);
+    el.nwtGoToNodeBtn.addEventListener('click', goToNodeFromInput);
+    el.nwtGoToNode.addEventListener('keydown', function (evt) {
+        if (evt.key === 'Enter') { goToNodeFromInput(); }
+    });
     // Ctrl/Cmd+wheel to zoom, so a plain scroll over the preview still just
     // scrolls the wrap (consistent with every other scrollable area on the page).
     el.nwtGridWrap.addEventListener('wheel', function (evt) {

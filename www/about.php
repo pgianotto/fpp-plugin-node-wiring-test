@@ -25,6 +25,15 @@
                 checklist once you're done.
             </p>
             <p>
+                <b>Jumping straight to a node:</b> besides stepping one at a
+                time, you can go directly to any node - type its number into
+                <b>Go to node</b> and press Enter or click <b>Go</b>, or just
+                click the node directly in the preview below (whichever view
+                is showing, shaped layout or plain strip). Either way lights
+                exactly that node and updates the info box, the same as
+                stepping to it with Prev/Next.
+            </p>
+            <p>
                 <b>Preview toolbar:</b> above the plain layout preview,
                 <b>Front</b>/<b>Back</b> mirrors the layout left/right for
                 working from behind the prop (display only - it never changes

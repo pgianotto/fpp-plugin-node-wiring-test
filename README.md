@@ -15,7 +15,8 @@ new network protocol, no extra daemon, nothing installed) so you can:
 
 - select any configured model from a dropdown,
 - step through its nodes one at a time (or auto-play with an adjustable
-  interval),
+  interval), jump straight to any node by typing its number, or click a node
+  directly in the preview to light it,
 - see, for the node currently lit, its index, its expected x/y position in
   the model's buffer (for models FPP can resolve a 2D layout for), and the
   absolute channel range being driven,
