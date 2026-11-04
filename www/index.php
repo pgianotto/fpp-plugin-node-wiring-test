@@ -124,6 +124,10 @@
         <label for="nwtShowNumbers" style="font-weight:normal;">
             <input type="checkbox" id="nwtShowNumbers"> Show node numbers
         </label>
+        <span id="nwtNumberSizeWrap" style="display:none;align-items:center;gap:0.4em;">
+            <label for="nwtNumberSize" style="font-weight:normal;">Size:</label>
+            <input type="range" id="nwtNumberSize" min="100" max="300" step="10" value="150" style="width:6em;">
+        </span>
         <span id="nwtNumbersTooSmallHint" class="nwtLinearNote" style="margin:0;display:none;">(zoom in further to read them)</span>
         <span class="nwtRow" style="gap:0.2em;margin-bottom:0;">
             <button type="button" id="nwtZoomOut" title="Zoom out">&minus;</button>
@@ -199,6 +203,17 @@
             <input type="text" id="nwtMismatchNote" placeholder="optional note" style="width:14em;">
         </div>
         <div class="nwtNote" id="nwtActualNodeError" style="display:none;"></div>
+        <div class="nwtInfoLine" style="margin-top:0.5em;border-top:1px solid var(--bs-border-color);padding-top:0.5em;">
+            <label for="nwtLiveCorrectMode" style="font-weight:600;">
+                <input type="checkbox" id="nwtLiveCorrectMode"> Live correction mode
+            </label>
+            <span class="nwtNote" style="margin:0;">
+                - click the node in the preview that actually lit (no need
+                to type a number or click Mark); it logs the correction and
+                steps to the next node automatically.
+            </span>
+            <span id="nwtLiveCorrectStatus" class="nwtStatus" style="margin-left:0.6em;"></span>
+        </div>
     </div>
 
     <h3>Auto-scan</h3>
@@ -339,7 +354,9 @@
         viewSide: 'front',    // 'front' | 'back' - 'back' mirrors left/right
         zoomPercent: 100,
         showWiringPath: false,
-        showNodeNumbers: false
+        showNodeNumbers: false,
+        numberSizePercent: 150,
+        liveCorrectMode: false
     };
     var mismatchLog = [];
 
@@ -393,9 +410,9 @@
     var el = {};
     ['nwtModel', 'nwtRefreshModels', 'nwtChannelsPerNode', 'nwtColor', 'nwtWhiteWrap', 'nwtWhite',
      'nwtIntervalMs', 'nwtPrev', 'nwtPlay', 'nwtNext', 'nwtStop', 'nwtStatus', 'nwtGoToNode', 'nwtGoToNodeBtn',
-     'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels',
+     'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels', 'nwtLiveCorrectMode', 'nwtLiveCorrectStatus',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
-     'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
+     'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumberSizeWrap', 'nwtNumberSize', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtRangeFrom', 'nwtRangeTo', 'nwtRangeOffset', 'nwtApplyRangeOffset', 'nwtRangeStatus',
      'nwtVendorSearch', 'nwtVendorRefresh', 'nwtVendorStatus', 'nwtVendorResults',
@@ -473,6 +490,9 @@
         el.nwtRangeStatus.textContent = '';
         selectedVendorModel = null;
         el.nwtVendorSelectedRow.style.display = 'none';
+        state.liveCorrectMode = false;
+        el.nwtLiveCorrectMode.checked = false;
+        el.nwtLiveCorrectStatus.textContent = '';
         el.nwtInfoBox.style.display = 'none';
         renderGridPlaceholder('Select a model to begin.');
         setControlsEnabled(false);
@@ -870,10 +890,15 @@
 
     function drawNodeNumbers(ctx, layout, cell) {
         if (cell < MIN_CELL_FOR_NUMBERS) { return; }
-        ctx.font = Math.max(8, Math.floor(cell * 0.38)) + 'px sans-serif';
+        // numberSizePercent (the Size slider, 100-300%) scales the text on
+        // top of the baseline cell-proportional size, so it's independently
+        // adjustable from zoom - requested after the default size was still
+        // too small to read comfortably even once legible at all.
+        var scale = (state.numberSizePercent || 100) / 100;
+        ctx.font = Math.max(8, Math.floor(cell * 0.38 * scale)) + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = Math.max(1, cell * 0.1);
+        ctx.lineWidth = Math.max(1, cell * 0.1 * scale);
         ctx.strokeStyle = 'rgba(0,0,0,0.85)';
         ctx.fillStyle = '#fff';
         layout.nodePos.forEach(function (pos, idx) {
@@ -990,6 +1015,18 @@
     function onGridCanvasClick(evt) {
         var nodeIdx = nodeIndexAtCanvasEvent(evt);
         if (nodeIdx === undefined) { return; }
+
+        // Live correction mode: a plain click means "this is the node that
+        // actually lit for the one I'm currently on" - log it (only if it
+        // disagrees - a click matching what's commanded needs no entry) and
+        // step to the next node automatically, so stepping through a whole
+        // prop by eye is step -> look -> click, repeated, with no typing or
+        // separate "Mark" click per node.
+        if (state.liveCorrectMode && !evt.shiftKey) {
+            applyLiveCorrectionClick(nodeIdx);
+            return;
+        }
+
         // Shift+click: "this is the node that actually lit" - fills the
         // mismatch form's Actual-node field from the preview instead of
         // typing a number, without moving off the node currently being
@@ -1002,6 +1039,34 @@
         }
         stopPlayback();
         goToNode(nodeIdx);
+    }
+
+    function applyLiveCorrectionClick(nodeIdx) {
+        var layout = state.layout;
+        if (!layout || state.currentIndex < 0) { return; }
+        var slot = state.currentIndex;
+        if (nodeIdx !== slot) {
+            logMismatchEntry(slot, nodeIdx, 'Live correction mode');
+            el.nwtLiveCorrectStatus.textContent = 'Node ' + (slot + 1) + ': corrected to node ' + (nodeIdx + 1) + '.';
+        } else {
+            el.nwtLiveCorrectStatus.textContent = 'Node ' + (slot + 1) + ': matches, no correction needed.';
+        }
+        if (slot >= layout.nodeCount - 1) {
+            el.nwtLiveCorrectStatus.textContent += ' Reached the last node.';
+            return;
+        }
+        stepNext();
+    }
+
+    function toggleLiveCorrectMode() {
+        state.liveCorrectMode = el.nwtLiveCorrectMode.checked;
+        if (state.liveCorrectMode) {
+            stopPlayback();
+            if (state.currentIndex < 0 && state.layout && state.layout.nodeCount > 0) { stepNext(); }
+            el.nwtLiveCorrectStatus.textContent = 'On - click the node in the preview that actually lit.';
+        } else {
+            el.nwtLiveCorrectStatus.textContent = '';
+        }
     }
 
     function highlightCurrent() {
@@ -1157,7 +1222,7 @@
     }
 
     function setControlsEnabled(enabled) {
-        [el.nwtPrev, el.nwtPlay, el.nwtNext, el.nwtStop, el.nwtGoToNode, el.nwtGoToNodeBtn].forEach(function (b) { b.disabled = !enabled; });
+        [el.nwtPrev, el.nwtPlay, el.nwtNext, el.nwtStop, el.nwtGoToNode, el.nwtGoToNodeBtn, el.nwtLiveCorrectMode].forEach(function (b) { b.disabled = !enabled; });
     }
 
     // ---- Mismatch log -----------------------------------------------
@@ -1167,13 +1232,34 @@
         el.nwtActualNodeError.style.color = msg ? 'var(--bs-danger)' : '';
     }
 
+    // Shared by the manual "Mark this node as mismatched" button and live
+    // correction mode's auto-logging - actualNode/note/source let each
+    // caller fill in only what it has (live mode has no note, for example).
+    function logMismatchEntry(slot, actualNode, note, source) {
+        var layout = state.layout;
+        var pos = layout.nodePos[slot];
+        var cpn = parseInt(el.nwtChannelsPerNode.value, 10) || layout.cpn;
+        var absStart = layout.startChannel0 + slot * cpn + 1;
+        var absEnd = absStart + cpn - 1;
+        var entry = {
+            time: new Date().toLocaleTimeString(),
+            model: state.modelName,
+            node: slot + 1,
+            pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + (slot + 1)),
+            channels: absStart + '-' + absEnd,
+            actualNode: actualNode,
+            note: note || ''
+        };
+        if (source) { entry.source = source; }
+        mismatchLog.push(entry);
+        renderLog();
+        updateManualXModelButton();
+        drawGridCanvas();
+    }
+
     function markMismatch() {
         if (state.currentIndex < 0 || !state.layout) { return; }
         var layout = state.layout;
-        var pos = layout.nodePos[state.currentIndex];
-        var cpn = parseInt(el.nwtChannelsPerNode.value, 10) || layout.cpn;
-        var absStart = layout.startChannel0 + state.currentIndex * cpn + 1;
-        var absEnd = absStart + cpn - 1;
 
         // Optional: which node actually lit up physically instead. Kept
         // 0-based internally to match cam.assignment's convention, so a
@@ -1193,21 +1279,9 @@
         }
         showActualNodeError('');
 
-        var entry = {
-            time: new Date().toLocaleTimeString(),
-            model: state.modelName,
-            node: state.currentIndex + 1,
-            pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + (state.currentIndex + 1)),
-            channels: absStart + '-' + absEnd,
-            actualNode: actualNode,
-            note: el.nwtMismatchNote.value || ''
-        };
-        mismatchLog.push(entry);
+        logMismatchEntry(state.currentIndex, actualNode, el.nwtMismatchNote.value);
         el.nwtMismatchNote.value = '';
         el.nwtActualNode.value = '';
-        renderLog();
-        updateManualXModelButton();
-        drawGridCanvas();
     }
 
     function renderLog() {
@@ -2400,6 +2474,7 @@
     el.nwtPlay.addEventListener('click', togglePlayback);
     el.nwtStop.addEventListener('click', disableTest);
     el.nwtMarkMismatch.addEventListener('click', markMismatch);
+    el.nwtLiveCorrectMode.addEventListener('change', toggleLiveCorrectMode);
     el.nwtExportLog.addEventListener('click', exportLog);
     el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); drawGridCanvas(); });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
@@ -2426,6 +2501,11 @@
     });
     el.nwtShowNumbers.addEventListener('change', function () {
         state.showNodeNumbers = el.nwtShowNumbers.checked;
+        el.nwtNumberSizeWrap.style.display = state.showNodeNumbers ? 'inline-flex' : 'none';
+        drawGridCanvas();
+    });
+    el.nwtNumberSize.addEventListener('input', function () {
+        state.numberSizePercent = parseInt(el.nwtNumberSize.value, 10) || 150;
         drawGridCanvas();
     });
     el.nwtZoomIn.addEventListener('click', function () { setZoom(state.zoomPercent + ZOOM_STEP); });
