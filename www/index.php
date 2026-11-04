@@ -51,6 +51,9 @@
 #nwtGridTooltip { position: fixed; z-index: 2000; pointer-events: none; background: var(--bs-dark); color: var(--bs-light); border: 1px solid var(--bs-border-color); border-radius: 3px; padding: 0.15em 0.5em; font-size: 0.85em; font-weight: 600; }
 #nwtGridCanvas { cursor: crosshair; }
 #nwtZoomLevel { min-width: 3.5em; text-align: center; display: inline-block; }
+.nwtVendorResultRow { padding: 0.3em 0.6em; cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
+.nwtVendorResultRow:last-child { border-bottom: none; }
+.nwtVendorResultRow:hover { background: var(--bs-tertiary-bg); }
 </style>
 
 <div class="nwtApp">
@@ -288,6 +291,32 @@
             <tbody></tbody>
         </table>
     </details>
+
+    <details id="nwtVendorDetails">
+        <summary>Vendor model library (keep faces/states)</summary>
+        <p class="nwtNote">
+            The "Download corrected .xmodel" buttons above build a bare
+            Custom Model with nothing but position data - if your prop is
+            based on a real commercial model, that throws away any faces,
+            states, or sub-models it had. Search xLights' own vendor model
+            list below (the same one its Download Models dialog uses) for
+            the real model, and this patches <em>only</em> the corrected
+            wiring into the genuine vendor file - everything else (faces,
+            states, sub-models, prop type) stays exactly as the vendor built
+            it.
+        </p>
+        <div class="nwtRow">
+            <label for="nwtVendorSearch">Search vendor models:</label>
+            <input type="text" id="nwtVendorSearch" placeholder="vendor or model name" style="width:20em;">
+            <button id="nwtVendorRefresh" type="button">Refresh catalog</button>
+        </div>
+        <div class="nwtNote" id="nwtVendorStatus" style="margin:0 0 0.6em;">Catalog not loaded yet - start typing to load it.</div>
+        <div id="nwtVendorResults" style="max-height:12em;overflow:auto;border:1px solid var(--bs-border-color);border-radius:4px;display:none;"></div>
+        <div class="nwtRow" id="nwtVendorSelectedRow" style="display:none;margin-top:0.6em;">
+            <span><b>Selected:</b> <span id="nwtVendorSelectedLabel"></span></span>
+            <button id="nwtDownloadVendorXModel" type="button" disabled>Download corrected .xmodel (from this vendor model)</button>
+        </div>
+    </details>
 </div>
 
 <script>
@@ -369,6 +398,8 @@
      'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtRangeFrom', 'nwtRangeTo', 'nwtRangeOffset', 'nwtApplyRangeOffset', 'nwtRangeStatus',
+     'nwtVendorSearch', 'nwtVendorRefresh', 'nwtVendorStatus', 'nwtVendorResults',
+     'nwtVendorSelectedRow', 'nwtVendorSelectedLabel', 'nwtDownloadVendorXModel',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
      'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStatus', 'nwtStopCamera',
@@ -440,6 +471,8 @@
         state.layout = null;
         state.currentIndex = -1;
         el.nwtRangeStatus.textContent = '';
+        selectedVendorModel = null;
+        el.nwtVendorSelectedRow.style.display = 'none';
         el.nwtInfoBox.style.display = 'none';
         renderGridPlaceholder('Select a model to begin.');
         setControlsEnabled(false);
@@ -1293,6 +1326,7 @@
         var layout = state.layout;
         var ready = !!(layout && !layout.linear && buildManualAssignment(layout));
         el.nwtDownloadManualXModel.disabled = !ready;
+        updateVendorDownloadButton();
     }
 
     function downloadManualXModel() {
@@ -1309,6 +1343,209 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+
+    // ---- Vendor model library (keep faces/states) ------------------
+    var vendorCatalog = null;        // flattened [{vendor, modelName, modelType, wiringName, xmodelLink}], once loaded
+    var vendorSearchMatches = [];    // current filtered results, indexed for click handling
+    var selectedVendorModel = null;
+
+    function setVendorStatus(msg) { el.nwtVendorStatus.textContent = msg; }
+
+    function loadVendorCatalog(forceRefresh) {
+        setVendorStatus('Loading the xLights vendor catalog' +
+            (forceRefresh ? ' (forcing a refresh)' : '') + ' - this can take a minute the first time...');
+        var url = '/api/plugin/fpp-plugin-node-wiring-test/vendor-models' + (forceRefresh ? '?refresh=1' : '');
+        return apiGet(url).then(function (data) {
+            if (data.status !== 'OK') {
+                setVendorStatus('Error: ' + (data.message || 'could not load the vendor catalog.'));
+                return;
+            }
+            vendorCatalog = data.models || [];
+            setVendorStatus(vendorCatalog.length + ' vendor models loaded' +
+                (data.stale ? ' (a cached copy - a live refresh failed, try Refresh catalog later)' : '') + '.');
+            renderVendorSearchResults();
+        }).catch(function (err) {
+            setVendorStatus('Error loading the vendor catalog: ' + err.message);
+        });
+    }
+
+    function renderVendorSearchResults() {
+        var q = el.nwtVendorSearch.value.trim().toLowerCase();
+        var list = el.nwtVendorResults;
+        if (!vendorCatalog) {
+            list.style.display = 'none';
+            return;
+        }
+        if (q.length < 2) {
+            list.style.display = 'none';
+            vendorSearchMatches = [];
+            return;
+        }
+        vendorSearchMatches = vendorCatalog.filter(function (e) {
+            return (e.vendor + ' ' + e.modelName + ' ' + e.wiringName).toLowerCase().indexOf(q) > -1;
+        }).slice(0, 40);
+        list.style.display = '';
+        if (!vendorSearchMatches.length) {
+            list.innerHTML = '<div class="nwtNote" style="padding:0.4em 0.6em;">No matches.</div>';
+            return;
+        }
+        list.innerHTML = vendorSearchMatches.map(function (e, i) {
+            var label = e.vendor + ' — ' + e.modelName + (e.wiringName ? ' (' + e.wiringName + ')' : '');
+            return '<div class="nwtVendorResultRow" data-idx="' + i + '">' + escapeHtml(label) + '</div>';
+        }).join('');
+    }
+
+    function selectVendorModel(entry) {
+        selectedVendorModel = entry;
+        el.nwtVendorSelectedLabel.textContent = entry.vendor + ' — ' + entry.modelName +
+            (entry.wiringName ? ' (' + entry.wiringName + ')' : '');
+        el.nwtVendorSelectedRow.style.display = '';
+        el.nwtVendorResults.style.display = 'none';
+        updateVendorDownloadButton();
+    }
+
+    function updateVendorDownloadButton() {
+        var layout = state.layout;
+        var hasCorrection = !!(layout && (cam.assignment || buildManualAssignment(layout)));
+        el.nwtDownloadVendorXModel.disabled = !(selectedVendorModel && hasCorrection);
+    }
+
+    // Node-range attribute values look like "1-24,76-83,101-176" - the same
+    // format xLights itself writes for faceInfo/stateInfo node lists.
+    function parseNodeRangeString(s) {
+        var out = [];
+        (s || '').split(',').forEach(function (part) {
+            part = part.trim();
+            if (!part) { return; }
+            var m = part.match(/^(\d+)-(\d+)$/);
+            if (m) {
+                var a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+                for (var i = Math.min(a, b); i <= Math.max(a, b); i++) { out.push(i); }
+            } else if (/^\d+$/.test(part)) {
+                out.push(parseInt(part, 10));
+            }
+        });
+        return out;
+    }
+
+    // Faces/states reference fixed node (channel-group) numbers, not grid
+    // positions - so unlike plain position-based effects, they don't
+    // automatically "follow" a node to its corrected position. This can't
+    // fix that (only re-mapping the face/state in xLights itself can); it
+    // just tells the user which of their corrections might need that.
+    function findFaceStateConflicts(root, layout, assignment) {
+        var referenced = {};
+        ['faceInfo', 'stateInfo'].forEach(function (tag) {
+            var els = root.getElementsByTagName(tag);
+            for (var i = 0; i < els.length; i++) {
+                var attrs = els[i].attributes;
+                for (var j = 0; j < attrs.length; j++) {
+                    var val = attrs[j].value;
+                    if (/\d/.test(val) && /^[\d,\-\s]+$/.test(val)) {
+                        parseNodeRangeString(val).forEach(function (n) { referenced[n] = true; });
+                    }
+                }
+            }
+        });
+        var conflicts = [];
+        for (var slot = 0; slot < layout.nodeCount; slot++) {
+            if (assignment[slot] !== slot && referenced[slot + 1]) { conflicts.push(slot + 1); }
+        }
+        return conflicts;
+    }
+
+    // Patches ONLY the corrected wiring (CustomModel/CustomModelCompressed,
+    // StartChannel) into a real vendor .xmodel's existing XML - every other
+    // attribute and every child element (faceInfo, stateInfo, subModel,
+    // prop type, ...) is left exactly as the vendor shipped it.
+    function patchVendorXModel(xmlText, layout, assignment) {
+        var doc;
+        try {
+            doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        } catch (e) {
+            return { ok: false, error: 'Could not parse the vendor file as XML.' };
+        }
+        if (doc.querySelector('parsererror')) {
+            return { ok: false, error: 'Could not parse the vendor file as XML.' };
+        }
+
+        var root = doc.documentElement;
+        // Some downloads wrap the real model in a <models> container - unwrap
+        // to the actual element so attributes get set on the right node.
+        if (root.tagName.toLowerCase() === 'models') {
+            root = root.firstElementChild;
+            if (!root) { return { ok: false, error: 'Vendor file has no model inside its <models> wrapper.' }; }
+        }
+
+        // Vendor files use either CustomWidth/CustomHeight or the older
+        // parm1/parm2 names for the same thing - confirmed against real
+        // downloaded files using both. Dimensions must match exactly, or
+        // writing our grid string (sized to OUR width/height) into this
+        // file's CustomModel attribute would silently corrupt it.
+        var vendorW = parseInt(root.getAttribute('CustomWidth') || root.getAttribute('parm1') || '0', 10);
+        var vendorH = parseInt(root.getAttribute('CustomHeight') || root.getAttribute('parm2') || '0', 10);
+        if (vendorW !== layout.visualWidth || vendorH !== layout.visualHeight) {
+            return {
+                ok: false, error: 'This vendor model is ' + vendorW + 'x' + vendorH + ', but your installed model\'s ' +
+                    'layout is ' + layout.visualWidth + 'x' + layout.visualHeight + ' - they don\'t match (wrong ' +
+                    'model/wiring option, or a resized copy), so patching was skipped rather than risk a corrupted file.'
+            };
+        }
+
+        var grid = buildCustomModelGridStrings(layout, assignment);
+        root.setAttribute('CustomModel', grid.dense);
+        if (root.hasAttribute('CustomModelCompressed')) {
+            root.setAttribute('CustomModelCompressed', grid.compressed);
+        }
+        root.setAttribute('StartChannel', String(layout.startChannel0 + 1));
+
+        var warning = '';
+        var conflicts = findFaceStateConflicts(root, layout, assignment);
+        if (conflicts.length) {
+            warning = ' Note: ' + conflicts.length + ' corrected node' + (conflicts.length === 1 ? '' : 's') +
+                ' (' + conflicts.join(', ') + ') ' + (conflicts.length === 1 ? 'is' : 'are') +
+                ' referenced by this model\'s face/state definitions - faces/states reference fixed node numbers, ' +
+                'not positions, so they won\'t automatically follow the correction; re-check them in xLights\' ' +
+                'Face/State editor after importing.';
+        }
+
+        return { ok: true, xml: new XMLSerializer().serializeToString(doc), warning: warning };
+    }
+
+    function downloadVendorCorrectedXModel() {
+        var layout = state.layout;
+        if (!layout || !selectedVendorModel) { return; }
+        var assignment = cam.assignment || buildManualAssignment(layout);
+        if (!assignment) {
+            setVendorStatus('No corrections to apply yet - mark at least one mismatch (or run a scan) first.');
+            return;
+        }
+
+        setVendorStatus('Fetching ' + selectedVendorModel.modelName + ' from ' + selectedVendorModel.vendor + '...');
+        var url = '/api/plugin/fpp-plugin-node-wiring-test/vendor-xmodel?url=' + encodeURIComponent(selectedVendorModel.xmodelLink);
+        fetch(url).then(function (r) {
+            if (!r.ok) {
+                return r.text().then(function (t) { throw new Error(t || ('HTTP ' + r.status)); });
+            }
+            return r.text();
+        }).then(function (xmlText) {
+            var patched = patchVendorXModel(xmlText, layout, assignment);
+            if (!patched.ok) {
+                setVendorStatus(patched.error);
+                return;
+            }
+            var blob = new Blob([patched.xml], { type: 'application/xml' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = selectedVendorModel.modelName.replace(/[^\w.-]+/g, '_') + '-corrected.xmodel';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setVendorStatus('Downloaded.' + patched.warning);
+        }).catch(function (err) {
+            setVendorStatus('Error: ' + err.message);
+        });
     }
 
     // ---- Camera -----------------------------------------------------
@@ -1842,6 +2079,7 @@
         }
         renderLog();
         drawGridCanvas();
+        updateVendorDownloadButton();
         if (count > 0) { el.nwtLogDetails.open = true; } // surface it rather than leaving it silently collapsed
         return count;
     }
@@ -2084,10 +2322,11 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    function buildCorrectedXModel(assignment) {
-        var layout = state.layout;
-        assignment = assignment || cam.assignment;
-        if (!layout || layout.linear || !assignment) { return null; }
+    // The dense/compressed CustomModel grid strings for a given assignment -
+    // shared between building a brand-new model from scratch and patching
+    // just those two attributes into a real vendor-downloaded one, so both
+    // paths always agree on the exact same grid format.
+    function buildCustomModelGridStrings(layout, assignment) {
         var w = layout.visualWidth, h = layout.visualHeight;
         var grid = [];
         for (var y = 0; y < h; y++) { grid.push(new Array(w).fill(null)); }
@@ -2110,6 +2349,15 @@
         }
         var compressed = compressedEntries.join(';');
 
+        return { dense: dense, compressed: compressed, width: w, height: h };
+    }
+
+    function buildCorrectedXModel(assignment) {
+        var layout = state.layout;
+        assignment = assignment || cam.assignment;
+        if (!layout || layout.linear || !assignment) { return null; }
+        var grid = buildCustomModelGridStrings(layout, assignment);
+
         var cpn = currentCpn();
         var stringType = cpn >= 4 ? '4 Channel RGBW' : 'RGB Nodes';
         var name = (state.modelName || 'CorrectedModel') + '-corrected';
@@ -2122,10 +2370,10 @@
         // writing the declaration as one literal broke this page with a
         // parse error on "xml version" before this was split up.
         return '<' + '?xml version="1.0" encoding="UTF-8"?' + '>\n' +
-            '<custommodel name="' + xmlEscape(name) + '" CustomWidth="' + w + '" CustomHeight="' + h + '"' +
+            '<custommodel name="' + xmlEscape(name) + '" CustomWidth="' + grid.width + '" CustomHeight="' + grid.height + '"' +
             ' Depth="1" StringType="' + xmlEscape(stringType) + '" Transparency="0" PixelSize="2" Antialias="1"' +
             ' StrandNames="" NodeNames="" LayoutGroup="Default"' +
-            ' CustomModel="' + xmlEscape(dense) + '" CustomModelCompressed="' + xmlEscape(compressed) + '"' +
+            ' CustomModel="' + xmlEscape(grid.dense) + '" CustomModelCompressed="' + xmlEscape(grid.compressed) + '"' +
             ' StartChannel="' + startChannel1 + '" SourceVersion="2024.10" />\n';
     }
 
@@ -2156,6 +2404,19 @@
     el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); drawGridCanvas(); });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
     el.nwtApplyRangeOffset.addEventListener('click', applyRangeOffset);
+
+    el.nwtVendorSearch.addEventListener('focus', function () {
+        if (!vendorCatalog) { loadVendorCatalog(false); }
+    });
+    el.nwtVendorSearch.addEventListener('input', renderVendorSearchResults);
+    el.nwtVendorRefresh.addEventListener('click', function () { loadVendorCatalog(true); });
+    el.nwtVendorResults.addEventListener('click', function (evt) {
+        var row = evt.target.closest('.nwtVendorResultRow');
+        if (!row) { return; }
+        var idx = parseInt(row.dataset.idx, 10);
+        if (vendorSearchMatches[idx]) { selectVendorModel(vendorSearchMatches[idx]); }
+    });
+    el.nwtDownloadVendorXModel.addEventListener('click', downloadVendorCorrectedXModel);
 
     el.nwtViewFront.addEventListener('click', function () { setViewSide('front'); });
     el.nwtViewBack.addEventListener('click', function () { setViewSide('back'); });
