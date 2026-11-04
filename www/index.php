@@ -128,7 +128,7 @@
             <label for="nwtNumberSize" style="font-weight:normal;">Size:</label>
             <input type="range" id="nwtNumberSize" min="100" max="300" step="10" value="150" style="width:6em;">
         </span>
-        <span id="nwtNumbersTooSmallHint" class="nwtLinearNote" style="margin:0;display:none;">(zoom in further to read them)</span>
+        <span id="nwtNumbersTooSmallHint" class="nwtLinearNote" style="margin:0;display:none;">(too small to read - zoom in further or raise the Size slider)</span>
         <span class="nwtRow" style="gap:0.2em;margin-bottom:0;">
             <button type="button" id="nwtZoomOut" title="Zoom out">&minus;</button>
             <span id="nwtZoomLevel">100%</span>
@@ -698,12 +698,17 @@
     var MAX_BASE_CELL = 40; // how big a "fit to window" dot is allowed to get on a small model
     // Zoom is a target percentage of the base (fit-to-view) cell size, but
     // the actual cell size used is also capped by this canvas-area budget
-    // (~12 megapixels) regardless of the zoom setting - without it, zooming
+    // (~24 megapixels) regardless of the zoom setting - without it, zooming
     // in on a very large model (the 20,736-node Matrix model from earlier
     // testing, say) could ask the browser for an enormous canvas and run out
     // of memory. Large models simply can't zoom as far in as small ones.
-    var MAX_GRID_CANVAS_AREA = 12000000;
-    var ZOOM_MIN = 25, ZOOM_MAX = 800, ZOOM_STEP = 25;
+    // Raised from 12MP and ZOOM_MAX raised from 800 after a very sparse
+    // model (a large bounding box with relatively few nodes in it, e.g.
+    // Ghost_1's 220x289) turned out to cap out at a cell size just under
+    // what "Show node numbers" needs, with no way to zoom past it - numbers
+    // could never show at all on that kind of model with the old ceilings.
+    var MAX_GRID_CANVAS_AREA = 24000000;
+    var ZOOM_MIN = 25, ZOOM_MAX = 1600, ZOOM_STEP = 25;
 
     function renderGridPlaceholder(msg) {
         el.nwtGridCanvas.style.display = 'none';
@@ -882,20 +887,29 @@
         });
     }
 
-    // Below this cell size a number wouldn't be legible anyway (and with
-    // thousands of nodes, drawing unreadable text for all of them is wasted
-    // work) - skip the text entirely and let updateNumbersTooSmallHint() tell
-    // the user to zoom in instead.
-    var MIN_CELL_FOR_NUMBERS = 14;
+    // Below this computed font size a number wouldn't be legible anyway (and
+    // with thousands of nodes, drawing unreadable text for all of them is
+    // wasted work) - skip the text entirely and let
+    // updateNumbersTooSmallHint() tell the user to zoom in (or raise the
+    // Size slider) instead. Checked against the actual font size the Size
+    // slider produces, not a fixed cell size - on a model whose cells can
+    // only ever get so big (very sparse layouts are capped by
+    // MAX_GRID_CANVAS_AREA regardless of zoom, see effectiveCellFor()), a
+    // fixed cell-size gate could refuse to ever show numbers even at
+    // maximum zoom; checking the font size the slider would actually
+    // produce means turning the slider up can rescue a model like that.
+    var MIN_FONT_PX_FOR_NUMBERS = 8;
+
+    function nodeNumberFontPx(cell) {
+        var scale = (state.numberSizePercent || 100) / 100;
+        return cell * 0.38 * scale;
+    }
 
     function drawNodeNumbers(ctx, layout, cell) {
-        if (cell < MIN_CELL_FOR_NUMBERS) { return; }
-        // numberSizePercent (the Size slider, 100-300%) scales the text on
-        // top of the baseline cell-proportional size, so it's independently
-        // adjustable from zoom - requested after the default size was still
-        // too small to read comfortably even once legible at all.
+        var fontPx = nodeNumberFontPx(cell);
+        if (fontPx < MIN_FONT_PX_FOR_NUMBERS) { return; }
         var scale = (state.numberSizePercent || 100) / 100;
-        ctx.font = Math.max(8, Math.floor(cell * 0.38 * scale)) + 'px sans-serif';
+        ctx.font = Math.floor(fontPx) + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = Math.max(1, cell * 0.1 * scale);
@@ -913,7 +927,7 @@
 
     function updateNumbersTooSmallHint(cell) {
         el.nwtNumbersTooSmallHint.style.display =
-            (state.showNodeNumbers && cell < MIN_CELL_FOR_NUMBERS) ? '' : 'none';
+            (state.showNodeNumbers && nodeNumberFontPx(cell) < MIN_FONT_PX_FOR_NUMBERS) ? '' : 'none';
     }
 
     // Connects nodes in real wiring order (0, 1, 2, ...) so the physical
