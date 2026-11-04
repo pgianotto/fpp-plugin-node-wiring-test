@@ -736,7 +736,7 @@
         // "current" node (bigger, white fill) takes priority over the
         // normal start/end fill, but its ring still shows green/red so that
         // information isn't lost while stepping through node 0 or the last node.
-        var radius = Math.max(2, cell * 0.42);
+        var radius = Math.max(3.5, cell * 0.52);
         var lastIndex = layout.nodeCount - 1;
         var START_COLOR = '#2ecc71', END_COLOR = '#ff4d4d', NORMAL_COLOR = '#4da3ff';
         function drawNode(x, y, nodeIdx, isCurrent) {
@@ -895,17 +895,48 @@
     // Shared by hover (tooltip) and click (select node) - returns the 0-based
     // node index under a canvas mouse/click event, or undefined if the
     // cursor isn't over a node (an empty cell, or outside the grid).
+    // How far off-center a click/hover can land and still hit the nearest
+    // node, in actual screen pixels (not cells) - a cell can be well under
+    // normal mouse precision on a dense or sparse model even when zoomed in
+    // a reasonable amount, so an exact-cell-only hit test made targeting a
+    // specific node by mouse unreasonably fiddly.
+    var CLICK_TOLERANCE_PX = 10;
+
     function nodeIndexAtCanvasEvent(evt) {
         if (!gridRender) { return undefined; }
         var layout = gridRender.layout, cell = gridRender.cell;
-        var cellX = Math.floor(evt.offsetX / cell);
-        var cellY = Math.floor(evt.offsetY / cell);
+        var px = evt.offsetX, py = evt.offsetY;
+        var cellX = Math.floor(px / cell);
+        var cellY = Math.floor(py / cell);
         if (cellX < 0 || cellY < 0 || cellX >= layout.visualWidth || cellY >= layout.visualHeight) {
             return undefined;
         }
         // Reverse the "Back" mirror to find which source column was under the cursor.
         var sourceX = (state.viewSide === 'back') ? (layout.visualWidth - 1 - cellX) : cellX;
-        return gridRender.cellByPos[sourceX + ',' + cellY];
+        var exact = gridRender.cellByPos[sourceX + ',' + cellY];
+        if (exact !== undefined) { return exact; }
+
+        // Nothing in the exact cell - search outward within a fixed pixel
+        // radius (translated to however many cells that covers at the
+        // current zoom) and snap to the closest real node's cell center,
+        // if one is within tolerance.
+        var cellRadius = Math.max(1, Math.ceil(CLICK_TOLERANCE_PX / cell));
+        var best, bestDistSq = Infinity;
+        for (var dy = -cellRadius; dy <= cellRadius; dy++) {
+            var cy = cellY + dy;
+            if (cy < 0 || cy >= layout.visualHeight) { continue; }
+            for (var dx = -cellRadius; dx <= cellRadius; dx++) {
+                var cx = cellX + dx;
+                if (cx < 0 || cx >= layout.visualWidth) { continue; }
+                var sx = (state.viewSide === 'back') ? (layout.visualWidth - 1 - cx) : cx;
+                var idx = gridRender.cellByPos[sx + ',' + cy];
+                if (idx === undefined) { continue; }
+                var ddx = (cx + 0.5) * cell - px, ddy = (cy + 0.5) * cell - py;
+                var distSq = ddx * ddx + ddy * ddy;
+                if (distSq < bestDistSq) { bestDistSq = distSq; best = idx; }
+            }
+        }
+        return (bestDistSq <= CLICK_TOLERANCE_PX * CLICK_TOLERANCE_PX) ? best : undefined;
     }
 
     function onGridCanvasMouseMove(evt) {
