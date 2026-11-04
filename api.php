@@ -19,6 +19,9 @@ function getEndpointsfpppluginnodewiringtest() {
     $result[] = array('method' => 'POST', 'endpoint' => 'camera/stop', 'callback' => 'nwtCameraStop');
     $result[] = array('method' => 'GET', 'endpoint' => 'camera/frame', 'callback' => 'nwtCameraFrame');
 
+    $result[] = array('method' => 'GET', 'endpoint' => 'vendor-models', 'callback' => 'nwtVendorModels');
+    $result[] = array('method' => 'GET', 'endpoint' => 'vendor-xmodel', 'callback' => 'nwtVendorXModel');
+
     return $result;
 }
 
@@ -223,5 +226,204 @@ function nwtCameraFrame() {
     send_header('Content-Type: image/jpeg');
     send_header('Cache-Control: no-store');
     return $data;
+}
+
+// ---- Vendor model catalog -------------------------------------------
+//
+// Lets the plugin offer "download a corrected .xmodel that still has this
+// vendor model's faces/states/submodels" by sourcing the real vendor file
+// instead of generating a blank one. The catalog itself is xLights' own:
+// a central index (xlights_vendors.xml) listing participating vendors,
+// each with their own inventory file listing models and, per model, one or
+// more <wiring> options with a real downloadable .xmodel/.zip link - the
+// exact mechanism xLights' own "Download Models" dialog uses (confirmed
+// against xLights' actual source, src-core/import_export/VendorCatalog.cpp,
+// and against the real public files it fetches). Nothing here is hardcoded
+// from that source beyond the index URL itself - staying in sync with
+// xLights' own list (new vendors, new models) is just this cache expiring
+// and being refetched, not a plugin update.
+//
+// Fetched and cached here (not by the browser) for two reasons: FPP's own
+// Content-Security-Policy would block a direct browser fetch to most of
+// these vendor domains (same reasoning as camera/frame above), and vendor
+// servers don't send CORS headers for an arbitrary cross-origin browser
+// fetch anyway.
+
+define('NWT_VENDOR_INDEX_URL', 'https://raw.githubusercontent.com/xLightsSequencer/xLights/master/download/xlights_vendors.xml');
+define('NWT_VENDOR_CACHE_TTL', 24 * 60 * 60);       // re-check the catalog daily, like xLights itself
+define('NWT_VENDOR_MODEL_CACHE_TTL', 30 * 24 * 60 * 60); // individual .xmodel files change rarely
+
+function nwtVendorCacheFile() {
+    return nwtDataDir() . '/vendor-catalog.json';
+}
+
+function nwtVendorModelCacheDir() {
+    $dir = nwtDataDir() . '/vendor-models';
+    if (!is_dir($dir)) { @mkdir($dir, 0755, true); }
+    return $dir;
+}
+
+// Plain file_get_contents+stream_context, matching camera/frame's existing
+// style in this file rather than adding a curl dependency this plugin
+// doesn't otherwise need. PHP's https:// wrapper verifies certs by default.
+function nwtHttpGet($url, $timeoutSeconds) {
+    $ctx = stream_context_create(array('http' => array(
+        'timeout' => $timeoutSeconds,
+        'header' => "User-Agent: fpp-plugin-node-wiring-test (+https://github.com/pgianotto/fpp-plugin-node-wiring-test)\r\n",
+        'follow_location' => 1,
+        'max_redirects' => 3,
+    )));
+    return @file_get_contents($url, false, $ctx);
+}
+
+// Builds the flattened {vendor, modelName, wiringName, xmodelLink, ...} list
+// from the live index + every vendor's inventory, skipping (not aborting
+// on) any single vendor whose file is unreachable or unparsable - one dead
+// vendor site shouldn't take the rest of the catalog down with it, same as
+// xLights' own loader.
+function nwtBuildVendorCatalog() {
+    set_time_limit(180); // several sequential vendor-site fetches
+
+    $indexXml = nwtHttpGet(NWT_VENDOR_INDEX_URL, 10);
+    if ($indexXml === false) { return null; }
+    $index = @simplexml_load_string($indexXml);
+    if ($index === false) { return null; }
+
+    $entries = array();
+    foreach ($index->children() as $v) {
+        if ($v->getName() !== 'vendor') { continue; } // skip <musicvendor> etc.
+        $vendorName = trim((string) $v->name);
+        $link = trim((string) $v->link);
+        $maxModels = isset($v->maxmodels) ? (int) $v->maxmodels : -1;
+        if ($vendorName === '' || $link === '') { continue; }
+
+        $invXml = nwtHttpGet($link, 8);
+        if ($invXml === false) { continue; }
+        $inv = @simplexml_load_string($invXml);
+        if ($inv === false || $inv->getName() !== 'modelinventory') { continue; }
+
+        $count = 0;
+        foreach ($inv->models->model as $model) {
+            if ($maxModels >= 1 && $count >= $maxModels) { break; }
+            $count++;
+            $modelName = trim((string) $model->name);
+            foreach ($model->wiring as $wiring) {
+                $xmodelLink = trim((string) $wiring->xmodellink);
+                if ($xmodelLink === '') { continue; }
+                $entries[] = array(
+                    'vendor' => $vendorName,
+                    'modelName' => $modelName,
+                    'modelType' => trim((string) $model->type),
+                    'wiringName' => trim((string) $wiring->name),
+                    'xmodelLink' => $xmodelLink,
+                );
+            }
+        }
+    }
+    return $entries;
+}
+
+// GET /api/plugin/fpp-plugin-node-wiring-test/vendor-models?refresh=1
+function nwtVendorModels() {
+    $cacheFile = nwtVendorCacheFile();
+    $forceRefresh = isset($_GET['refresh']) && $_GET['refresh'] == '1';
+
+    if (!$forceRefresh && file_exists($cacheFile) && (time() - filemtime($cacheFile)) < NWT_VENDOR_CACHE_TTL) {
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cached)) {
+            return json(array('status' => 'OK', 'cached' => true, 'models' => $cached));
+        }
+    }
+
+    $entries = nwtBuildVendorCatalog();
+    if ($entries === null) {
+        // Network/parse failure - fall back to a stale cache rather than an
+        // empty result, if one exists.
+        if (file_exists($cacheFile)) {
+            $cached = json_decode(file_get_contents($cacheFile), true);
+            if (is_array($cached)) {
+                return json(array('status' => 'OK', 'cached' => true, 'stale' => true, 'models' => $cached));
+            }
+        }
+        return json(array('status' => 'ERROR', 'message' => 'Could not reach the xLights vendor catalog.'));
+    }
+
+    file_put_contents($cacheFile, json_encode($entries));
+    return json(array('status' => 'OK', 'cached' => false, 'models' => $entries));
+}
+
+// GET /api/plugin/fpp-plugin-node-wiring-test/vendor-xmodel?url=<xmodelLink>
+//
+// Only ever fetches a URL that's actually present in the cached catalog
+// (built entirely from xLights' own vendor index above) - never an
+// arbitrary caller-supplied URL - so this can't be turned into an open
+// fetch proxy for anywhere else on the internet.
+function nwtVendorXModel() {
+    $url = isset($_GET['url']) ? trim($_GET['url']) : '';
+    if ($url === '') {
+        http_response_code(400);
+        return 'Missing url.';
+    }
+
+    $cacheFile = nwtVendorCacheFile();
+    if (!file_exists($cacheFile)) {
+        http_response_code(409);
+        return 'Vendor catalog not loaded yet - fetch vendor-models first.';
+    }
+    $catalog = json_decode(file_get_contents($cacheFile), true);
+    $known = false;
+    if (is_array($catalog)) {
+        foreach ($catalog as $entry) {
+            if (isset($entry['xmodelLink']) && $entry['xmodelLink'] === $url) { $known = true; break; }
+        }
+    }
+    if (!$known) {
+        http_response_code(403);
+        return 'That URL is not in the cached vendor catalog.';
+    }
+
+    $isZip = (strtolower(substr($url, -4)) === '.zip');
+    $cachePath = nwtVendorModelCacheDir() . '/' . sha1($url) . ($isZip ? '.zip' : '.xmodel');
+
+    if (!file_exists($cachePath) || (time() - filemtime($cachePath)) >= NWT_VENDOR_MODEL_CACHE_TTL) {
+        $data = nwtHttpGet($url, 15);
+        if ($data === false) {
+            http_response_code(502);
+            return 'Could not download that model from the vendor.';
+        }
+        file_put_contents($cachePath, $data);
+    }
+
+    if (!$isZip) {
+        send_header('Content-Type: application/xml');
+        send_header('Cache-Control: no-store');
+        return file_get_contents($cachePath);
+    }
+
+    if (!class_exists('ZipArchive')) {
+        http_response_code(501);
+        return "This vendor packages the model as a .zip, and PHP's zip extension isn't available on this FPP box.";
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($cachePath) !== true) {
+        http_response_code(502);
+        return 'Could not open the downloaded .zip file.';
+    }
+    $xml = null;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $name = $zip->getNameIndex($i);
+        if (preg_match('/\.xmodel$/i', $name)) {
+            $xml = $zip->getFromIndex($i);
+            break;
+        }
+    }
+    $zip->close();
+    if ($xml === null) {
+        http_response_code(502);
+        return 'No .xmodel file found inside the vendor .zip.';
+    }
+    send_header('Content-Type: application/xml');
+    send_header('Cache-Control: no-store');
+    return $xml;
 }
 ?>
