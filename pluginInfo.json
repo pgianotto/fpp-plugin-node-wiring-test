@@ -9,12 +9,18 @@
   "allowUpdates": 1,
   "releaseNotesStyle": "gitHistory",
   "privacy": {
-    "summary": "Lights one node at a time, using FPP's own local channel-test API. Can optionally watch a camera to spot mismatches (frames never saved), or stream a USB camera on this device to your browser locally.",
+    "summary": "Lights one node at a time via FPP's channel-test API. Can watch a camera for mismatches (frames never saved), stream a local USB camera to your browser, or fetch xLights' public vendor model list.",
     "sends": [
       {
         "to": "devices on your local network",
         "what": "live video from the USB camera",
         "why": "so another device's browser can view/auto-scan the camera on this device",
+        "alwaysOn": false
+      },
+      {
+        "to": "GitHub (raw.githubusercontent.com) and individual lighting-prop vendors' own websites",
+        "what": "a request for xLights' public vendor model list and, if you pick one, that vendor's own .xmodel file",
+        "why": "to search xLights' own vendor model catalog (the same list its Download Models dialog uses) and patch a corrected .xmodel into a real commercial model, keeping its faces/states instead of discarding them",
         "alwaysOn": false
       }
     ],
@@ -27,7 +33,7 @@
       { "kind": "network", "what": "Opens a local port serving a USB camera's video while you have it running (Start/Stop Camera); not a system service, does not start on boot." }
     ],
     "closedCode": false,
-    "other": "Test-mode channel overrides, the mismatch log and scan results are all transient (in fppd or the browser tab) and are not written to FPP's configuration. The camera feature is off by default and only active while you have it started."
+    "other": "Test-mode channel overrides, the mismatch log and scan results are all transient (in fppd or the browser tab) and are not written to FPP's configuration. The camera feature is off by default and only active while you have it started. The vendor model catalog (public model names/URLs, re-fetched periodically) and any vendor .xmodel files you download through it are cached under the plugin's own data directory for performance, not as a system service."
   },
   "versions": [
     {
