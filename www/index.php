@@ -253,6 +253,31 @@
             placement data, so they're left out of the correction (every
             other node keeps its originally-wired position).
         </p>
+        <fieldset class="border rounded p-2" style="margin-bottom:0.8em;">
+            <legend style="font-size:0.95em;">Bulk-correct a shifted range</legend>
+            <p class="nwtNote" style="margin-bottom:0.6em;">
+                Common with a miswired connector or an extra/missing prop
+                spliced into a run: one whole stretch of nodes all light up a
+                constant number of nodes off from what's expected, until the
+                next strand/section corrects itself. Rather than marking each
+                one by hand, give the first and last node of the shifted
+                stretch and the offset (how many nodes ahead/behind the
+                physical one is, e.g. <code>4</code> if commanding node 50
+                actually lights what you expected at node 54, or
+                <code>-4</code> the other way) and this fills in that whole
+                range at once.
+            </p>
+            <div class="nwtRow">
+                <label for="nwtRangeFrom">From node:</label>
+                <input type="number" id="nwtRangeFrom" min="1" style="width:6em;">
+                <label for="nwtRangeTo">To node:</label>
+                <input type="number" id="nwtRangeTo" min="1" style="width:6em;">
+                <label for="nwtRangeOffset">Offset:</label>
+                <input type="number" id="nwtRangeOffset" step="1" style="width:6em;" placeholder="e.g. 4 or -4">
+                <button id="nwtApplyRangeOffset" type="button">Apply to range</button>
+            </div>
+            <div class="nwtNote" id="nwtRangeStatus" style="margin:0;"></div>
+        </fieldset>
         <table class="nwtLogTable" id="nwtLogTable">
             <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Actually lit</th><th>Note</th></tr></thead>
             <tbody></tbody>
@@ -338,6 +363,7 @@
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
      'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
      'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
+     'nwtRangeFrom', 'nwtRangeTo', 'nwtRangeOffset', 'nwtApplyRangeOffset', 'nwtRangeStatus',
      'nwtCamSource', 'nwtCamLocalRow', 'nwtCamStreamRow', 'nwtCamDevice', 'nwtCamStart',
      'nwtCamStreamUrl', 'nwtCamStreamStart', 'nwtCamWrap', 'nwtCamVideo', 'nwtCamImg', 'nwtCamOverlay',
      'nwtPiCamDevice', 'nwtPiCamDetect', 'nwtPiCamStart', 'nwtPiCamStatus', 'nwtStopCamera',
@@ -408,6 +434,7 @@
         state.model = null;
         state.layout = null;
         state.currentIndex = -1;
+        el.nwtRangeStatus.textContent = '';
         el.nwtInfoBox.style.display = 'none';
         renderGridPlaceholder('Select a model to begin.');
         setControlsEnabled(false);
@@ -1086,6 +1113,72 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+
+    // Bulk-fills the manual log for a whole stretch of nodes that are all
+    // off from expected by the same constant amount - the common signature
+    // of a miswired connector or an extra/missing prop spliced into a run
+    // (a block of consecutive nodes shifted until the next strand/section
+    // corrects itself), which would otherwise mean marking each one by hand.
+    function applyRangeOffset() {
+        var layout = state.layout;
+        var status = el.nwtRangeStatus;
+        if (!layout || layout.nodeCount <= 0) { return; }
+
+        var from = parseInt(el.nwtRangeFrom.value, 10);
+        var to = parseInt(el.nwtRangeTo.value, 10);
+        var offset = parseInt(el.nwtRangeOffset.value, 10);
+        status.style.color = 'var(--bs-danger)';
+        if (!Number.isFinite(from) || !Number.isFinite(to) || !Number.isFinite(offset)) {
+            status.textContent = 'Enter a From node, To node, and offset.';
+            return;
+        }
+        if (from < 1 || to < 1 || from > layout.nodeCount || to > layout.nodeCount || from > to) {
+            status.textContent = 'From/To must be between 1 and ' + layout.nodeCount + ', with From ≤ To.';
+            return;
+        }
+        if (offset === 0) {
+            status.textContent = 'An offset of 0 means no correction - nothing to apply.';
+            return;
+        }
+
+        // Replace any earlier bulk-range entries landing inside this same
+        // span, so re-applying a corrected offset over the same stretch
+        // doesn't pile up stale duplicates. Entries from "Mark this node as
+        // mismatched", a scan, or a range outside this span are untouched.
+        mismatchLog = mismatchLog.filter(function (e) {
+            return !(e.source === 'range' && e.model === state.modelName && e.node >= from && e.node <= to);
+        });
+
+        var cpn = currentCpn();
+        var applied = 0, skipped = 0;
+        for (var node = from; node <= to; node++) {
+            var actualNode1 = node + offset;
+            if (actualNode1 < 1 || actualNode1 > layout.nodeCount) { skipped++; continue; }
+            var idx = node - 1;
+            var pos = layout.nodePos[idx];
+            var range = absRangeForNode(layout, cpn, idx);
+            mismatchLog.push({
+                time: new Date().toLocaleTimeString(),
+                model: state.modelName,
+                node: node,
+                pos: (pos && !layout.linear) ? ('x=' + pos.x + ', y=' + pos.y) : ('#' + node),
+                channels: (range.absStart + 1) + '-' + (range.absEnd + 1),
+                actualNode: actualNode1 - 1,
+                note: 'Range offset ' + (offset > 0 ? '+' : '') + offset,
+                source: 'range'
+            });
+            applied++;
+        }
+
+        renderLog();
+        updateManualXModelButton();
+        el.nwtLogDetails.open = true;
+
+        var msg = 'Applied to ' + applied + ' node' + (applied === 1 ? '' : 's') + '.';
+        if (skipped > 0) { msg += ' ' + skipped + ' skipped (offset would land outside the model\'s node range).'; }
+        status.textContent = msg;
+        status.style.color = skipped > 0 ? 'var(--bs-danger)' : 'var(--bs-success)';
     }
 
     // Assignment array (same shape as cam.assignment from an auto-scan:
@@ -1970,6 +2063,7 @@
     el.nwtExportLog.addEventListener('click', exportLog);
     el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
+    el.nwtApplyRangeOffset.addEventListener('click', applyRangeOffset);
 
     el.nwtViewFront.addEventListener('click', function () { setViewSide('front'); });
     el.nwtViewBack.addEventListener('click', function () { setViewSide('back'); });
