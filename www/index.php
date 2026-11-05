@@ -696,19 +696,22 @@
     var FALLBACK_GRID_CANVAS_W = 1000, FALLBACK_GRID_CANVAS_H = 480;
     var GRID_WRAP_PADDING = 20; // #nwtGridWrap's CSS padding, both axes - must come out of clientWidth/Height to get the canvas's actual usable box
     var MAX_BASE_CELL = 40; // how big a "fit to window" dot is allowed to get on a small model
-    // Zoom is a target percentage of the base (fit-to-view) cell size, but
-    // the actual cell size used is also capped by this canvas-area budget
-    // (~24 megapixels) regardless of the zoom setting - without it, zooming
-    // in on a very large model (the 20,736-node Matrix model from earlier
-    // testing, say) could ask the browser for an enormous canvas and run out
-    // of memory. Large models simply can't zoom as far in as small ones.
-    // Raised from 12MP and ZOOM_MAX raised from 800 after a very sparse
-    // model (a large bounding box with relatively few nodes in it, e.g.
-    // Ghost_1's 220x289) turned out to cap out at a cell size just under
-    // what "Show node numbers" needs, with no way to zoom past it - numbers
-    // could never show at all on that kind of model with the old ceilings.
-    var MAX_GRID_CANVAS_AREA = 24000000;
+    var MAX_GRID_CANVAS_AREA = 24000000; // bitmap memory budget (~24 megapixels) - see renderCellFor()
     var ZOOM_MIN = 25, ZOOM_MAX = 1600, ZOOM_STEP = 25;
+    // How much sharper than a "100%-zoom" cell the bitmap is rendered, so
+    // that even at maximum zoom the display is reading real pixel detail
+    // rather than a blown-up, blurry upscale of a coarse bitmap. Zoom itself
+    // is applied afterward as a pure CSS size (see displayCellFor() /
+    // applyDisplaySize()) - a float, not rounded to a whole pixel - which is
+    // the actual fix for zoom previously only visibly changing every few
+    // clicks: the bitmap used to be re-rendered at a ROUNDED pixel size on
+    // every zoom step, so many consecutive percentages rounded to the same
+    // integer and produced no visible change at all. Now the bitmap is
+    // rendered once (at model/view-option-change time, not on every zoom
+    // click) and zoom only ever resizes it on screen via CSS, which is
+    // exactly as smooth and continuous as the percentage shown.
+    var RENDER_SUPERSAMPLE = ZOOM_MAX / 100;
+    var MIN_DISPLAY_CELL_FOR_NUMBERS = 14; // CSS px per cell - a screen-size legibility floor, not a bitmap one
 
     function renderGridPlaceholder(msg) {
         el.nwtGridCanvas.style.display = 'none';
@@ -739,10 +742,21 @@
         ))));
     }
 
-    function effectiveCellFor(layout) {
-        var desired = Math.round(baseCellFor(layout) * (state.zoomPercent / 100));
+    // The bitmap's actual internal resolution, in pixels per grid cell -
+    // fixed per model/layout (not a function of the current zoom at all),
+    // sized for crispness at maximum zoom within the memory budget.
+    function renderCellFor(layout) {
+        var desired = Math.round(baseCellFor(layout) * RENDER_SUPERSAMPLE);
         var maxByArea = Math.max(1, Math.floor(Math.sqrt(MAX_GRID_CANVAS_AREA / (layout.visualWidth * layout.visualHeight))));
-        return Math.max(1, Math.min(desired, maxByArea));
+        return Math.max(1, Math.min(desired, maxByArea, 64));
+    }
+
+    // The on-screen (CSS) size, in pixels per grid cell, for the current
+    // zoom - a plain float, continuous with the zoom percentage, used for
+    // the canvas's displayed size and all hit-testing/scroll math (which
+    // operate in screen-pixel space, same as mouse events).
+    function displayCellFor(layout) {
+        return baseCellFor(layout) * (state.zoomPercent / 100);
     }
 
     // Display-only left/right mirror for "Back" view - flips which pixel
@@ -767,11 +781,16 @@
         drawGridCanvas();
     }
 
+    // Draws the bitmap content at its fixed internal resolution (renderCell -
+    // unrelated to the current zoom, see renderCellFor()). Called whenever
+    // WHAT's drawn changes (model, Front/Back, wiring path, node numbers,
+    // mismatch markers, current node) - never directly by zoom, which only
+    // ever resizes the already-drawn bitmap on screen (see setZoom()).
     function drawGridCanvas() {
         if (!gridRender) { return; }
         var layout = gridRender.layout, cellByPos = gridRender.cellByPos;
-        var cell = effectiveCellFor(layout);
-        gridRender.cell = cell;
+        var cell = renderCellFor(layout);
+        gridRender.renderCell = cell;
         el.nwtGridCanvas.width = layout.visualWidth * cell;
         el.nwtGridCanvas.height = layout.visualHeight * cell;
 
@@ -852,7 +871,11 @@
         }
 
         if (state.showNodeNumbers) { drawNodeNumbers(ctx, layout, cell); }
-        updateNumbersTooSmallHint(cell);
+
+        // Content just (re)drawn into the bitmap - make sure the on-screen
+        // size (and the legibility hint, which is about on-screen size, not
+        // bitmap resolution) reflects the current zoom too.
+        applyDisplaySize();
     }
 
     var MISMATCH_NOTE_COLOR = '#ffa500', MISMATCH_CORRECTED_COLOR = '#ff2fd0';
@@ -887,29 +910,17 @@
         });
     }
 
-    // Below this computed font size a number wouldn't be legible anyway (and
-    // with thousands of nodes, drawing unreadable text for all of them is
-    // wasted work) - skip the text entirely and let
-    // updateNumbersTooSmallHint() tell the user to zoom in (or raise the
-    // Size slider) instead. Checked against the actual font size the Size
-    // slider produces, not a fixed cell size - on a model whose cells can
-    // only ever get so big (very sparse layouts are capped by
-    // MAX_GRID_CANVAS_AREA regardless of zoom, see effectiveCellFor()), a
-    // fixed cell-size gate could refuse to ever show numbers even at
-    // maximum zoom; checking the font size the slider would actually
-    // produce means turning the slider up can rescue a model like that.
-    var MIN_FONT_PX_FOR_NUMBERS = 8;
-
-    function nodeNumberFontPx(cell) {
-        var scale = (state.numberSizePercent || 100) / 100;
-        return cell * 0.38 * scale;
-    }
+    // The bitmap is rendered at a fixed, generous resolution regardless of
+    // zoom (see renderCellFor()), so there's always enough detail to draw a
+    // legible glyph once renderCell clears this bare floor - whether the
+    // RESULT is currently big enough to actually read on screen is a
+    // separate, display-size question handled by updateNumbersTooSmallHint().
+    var MIN_RENDER_CELL_FOR_NUMBERS = 6;
 
     function drawNodeNumbers(ctx, layout, cell) {
-        var fontPx = nodeNumberFontPx(cell);
-        if (fontPx < MIN_FONT_PX_FOR_NUMBERS) { return; }
+        if (cell < MIN_RENDER_CELL_FOR_NUMBERS) { return; }
         var scale = (state.numberSizePercent || 100) / 100;
-        ctx.font = Math.floor(fontPx) + 'px sans-serif';
+        ctx.font = Math.max(1, Math.floor(cell * 0.38 * scale)) + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = Math.max(1, cell * 0.1 * scale);
@@ -925,9 +936,26 @@
         });
     }
 
-    function updateNumbersTooSmallHint(cell) {
+    // Purely a screen-size question: is a cell currently big enough on
+    // screen, at the current zoom, to actually read? (Not whether the
+    // bitmap has enough resolution - it always does, per renderCellFor().)
+    function updateNumbersTooSmallHint(displayCell) {
         el.nwtNumbersTooSmallHint.style.display =
-            (state.showNodeNumbers && nodeNumberFontPx(cell) < MIN_FONT_PX_FOR_NUMBERS) ? '' : 'none';
+            (state.showNodeNumbers && displayCell < MIN_DISPLAY_CELL_FOR_NUMBERS) ? '' : 'none';
+    }
+
+    // Resizes the already-drawn bitmap on screen to match the current zoom -
+    // a pure CSS style change, no redraw, so it's instant and perfectly
+    // smooth/continuous (a float CSS size, never rounded to a whole pixel)
+    // regardless of how small a step the zoom percentage changes by.
+    function applyDisplaySize() {
+        if (!gridRender) { return; }
+        var layout = gridRender.layout;
+        var displayCell = displayCellFor(layout);
+        gridRender.displayCell = displayCell;
+        el.nwtGridCanvas.style.width = (layout.visualWidth * displayCell) + 'px';
+        el.nwtGridCanvas.style.height = (layout.visualHeight * displayCell) + 'px';
+        updateNumbersTooSmallHint(displayCell);
     }
 
     // Connects nodes in real wiring order (0, 1, 2, ...) so the physical
@@ -952,7 +980,7 @@
     function setZoom(percent) {
         state.zoomPercent = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, percent));
         updateZoomLevelLabel();
-        drawGridCanvas();
+        applyDisplaySize(); // just a CSS resize of the already-drawn bitmap - no redraw needed
     }
 
     function setViewSide(side) {
@@ -976,7 +1004,11 @@
 
     function nodeIndexAtCanvasEvent(evt) {
         if (!gridRender) { return undefined; }
-        var layout = gridRender.layout, cell = gridRender.cell;
+        // offsetX/Y are in the canvas's on-screen (CSS) pixel space, which is
+        // exactly what displayCell measures - not the bitmap's internal
+        // resolution (renderCell), which is usually a different number now
+        // that zoom no longer redraws the bitmap at all.
+        var layout = gridRender.layout, cell = gridRender.displayCell;
         var px = evt.offsetX, py = evt.offsetY;
         var cellX = Math.floor(px / cell);
         var cellY = Math.floor(py / cell);
@@ -1088,7 +1120,7 @@
         if (!gridRender || state.currentIndex < 0) { return; }
         var pos = gridRender.layout.nodePos[state.currentIndex];
         if (!pos) { return; }
-        var cell = gridRender.cell;
+        var cell = gridRender.displayCell; // scrollTop/Left are CSS-pixel space, same as the canvas's displayed size
         var targetX = displayX(gridRender.layout, pos.x) * cell;
         var targetY = pos.y * cell;
         var wrap = el.nwtGridWrap;
