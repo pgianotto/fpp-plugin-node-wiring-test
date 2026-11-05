@@ -54,6 +54,12 @@
 .nwtVendorResultRow { padding: 0.3em 0.6em; cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
 .nwtVendorResultRow:last-child { border-bottom: none; }
 .nwtVendorResultRow:hover { background: var(--bs-tertiary-bg); }
+.nwtLogDeleteBtn { padding: 0.1em 0.5em; line-height: 1; background: transparent; border: 1px solid var(--bs-border-color); border-radius: 3px; color: var(--bs-danger); }
+.nwtLogDeleteBtn:hover { background: var(--bs-danger-bg-subtle); }
+.nwtStepNum { display: inline-block; min-width: 1.4em; color: var(--bs-primary); }
+.nwtApp button.nwtPrimaryBtn { background: var(--bs-primary); color: #fff; border: 1px solid var(--bs-primary); font-weight: 600; }
+.nwtApp button.nwtPrimaryBtn:hover:not(:disabled) { filter: brightness(1.08); }
+.nwtApp button.nwtPrimaryBtn:disabled { background: var(--bs-secondary-bg-subtle); border-color: var(--bs-border-color); color: var(--bs-secondary-color); }
 </style>
 
 <div class="nwtApp">
@@ -64,13 +70,14 @@
         catch wiring mistakes.
     </p>
 
+    <h3><span class="nwtStepNum">1.</span> Pick a model</h3>
     <div class="nwtRow">
         <label for="nwtModel">Model:</label>
         <select id="nwtModel"><option value="">Loading models...</option></select>
         <button id="nwtRefreshModels" type="button" title="Reload model list">&#x21bb;</button>
     </div>
 
-    <h3>Camera (optional)</h3>
+    <h3><span class="nwtStepNum">2.</span> Camera (optional)</h3>
     <p class="nwtNote">
         Lets the preview below show the node highlighted right on top of the
         real prop, and enables the auto-scan. Skip this to just use the
@@ -112,7 +119,7 @@
         </details>
     </div>
 
-    <h3>Preview</h3>
+    <h3><span class="nwtStepNum">3.</span> Preview</h3>
     <div class="nwtRow" id="nwtPreviewToolbar">
         <div class="nwtToggleGroup" role="group" aria-label="Front or back view">
             <button type="button" id="nwtViewFront" class="active">Front</button>
@@ -175,10 +182,10 @@
         </div>
     </div>
 
-    <h3>Step through nodes</h3>
+    <h3><span class="nwtStepNum">4.</span> Step through nodes</h3>
     <div class="nwtRow">
         <button id="nwtPrev" type="button" disabled>&#9664;&#9664; Prev</button>
-        <button id="nwtPlay" type="button" disabled>&#9654; Play</button>
+        <button id="nwtPlay" type="button" class="nwtPrimaryBtn" disabled>&#9654; Play</button>
         <button id="nwtNext" type="button" disabled>Next &#9654;&#9654;</button>
         <button id="nwtStop" type="button" disabled>&#9632; Stop</button>
         <label for="nwtIntervalMs">Interval (ms):</label>
@@ -216,7 +223,7 @@
         </div>
     </div>
 
-    <h3>Auto-scan</h3>
+    <h3><span class="nwtStepNum">5.</span> Auto-scan (optional, needs a camera)</h3>
     <p class="nwtNote">
         Needs a camera above. Flashes each node on/off in order and watches
         for it in the camera image - no manual calibration needed - then
@@ -227,7 +234,7 @@
     <div class="nwtRow">
         <label for="nwtSettleMs">Settle (ms):</label>
         <input type="number" id="nwtSettleMs" value="220" min="50" max="3000" step="10" style="width:5.5em;">
-        <button id="nwtRunScan" type="button" disabled>Run Auto Scan</button>
+        <button id="nwtRunScan" type="button" class="nwtPrimaryBtn" disabled>Run Auto Scan</button>
         <button id="nwtCancelScan" type="button" style="display:none;">Cancel</button>
         <span id="nwtScanStatus"></span>
     </div>
@@ -235,7 +242,7 @@
     <div id="nwtScanResults" style="display:none;">
         <div class="nwtInfoLine"><b>Calibration fit:</b> <span id="nwtFitQuality"></span></div>
         <div class="nwtRow">
-            <button id="nwtDownloadXModel" type="button" disabled>Download corrected .xmodel</button>
+            <button id="nwtDownloadXModel" type="button" class="nwtPrimaryBtn" disabled>Download corrected .xmodel</button>
         </div>
         <table class="nwtLogTable" id="nwtScanTable">
             <thead><tr><th>Slot (expected node)</th><th>Status</th><th>Physically matches node</th><th>Residual (px, 0-1 scale)</th></tr></thead>
@@ -267,7 +274,8 @@
         <div class="nwtRow">
             <button id="nwtExportLog" type="button">Export log (CSV)</button>
             <button id="nwtClearLog" type="button">Clear log</button>
-            <button id="nwtDownloadManualXModel" type="button" disabled>Download corrected .xmodel (from this log)</button>
+            <button id="nwtUndoLog" type="button" disabled title="Undo the last change to this log">&#8630; Undo</button>
+            <button id="nwtDownloadManualXModel" type="button" class="nwtPrimaryBtn" disabled>Download corrected .xmodel (from this log)</button>
         </div>
         <p class="nwtNote">
             Builds a corrected <code>.xmodel</code> straight from the "Node
@@ -302,7 +310,7 @@
             <div class="nwtNote" id="nwtRangeStatus" style="margin:0;"></div>
         </fieldset>
         <table class="nwtLogTable" id="nwtLogTable">
-            <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Actually lit</th><th>Note</th></tr></thead>
+            <thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Expected position</th><th>Channels</th><th>Actually lit</th><th>Note</th><th></th></tr></thead>
             <tbody></tbody>
         </table>
     </details>
@@ -329,7 +337,7 @@
         <div id="nwtVendorResults" style="max-height:12em;overflow:auto;border:1px solid var(--bs-border-color);border-radius:4px;display:none;"></div>
         <div class="nwtRow" id="nwtVendorSelectedRow" style="display:none;margin-top:0.6em;">
             <span><b>Selected:</b> <span id="nwtVendorSelectedLabel"></span></span>
-            <button id="nwtDownloadVendorXModel" type="button" disabled>Download corrected .xmodel (from this vendor model)</button>
+            <button id="nwtDownloadVendorXModel" type="button" class="nwtPrimaryBtn" disabled>Download corrected .xmodel (from this vendor model)</button>
         </div>
     </details>
 </div>
@@ -413,7 +421,7 @@
      'nwtInfoBox', 'nwtInfoNode', 'nwtInfoPos', 'nwtInfoChannels', 'nwtLiveCorrectMode', 'nwtLiveCorrectStatus',
      'nwtMarkMismatch', 'nwtMismatchNote', 'nwtActualNode', 'nwtActualNodeError', 'nwtGridCanvas', 'nwtGridPlaceholder', 'nwtGridWrap', 'nwtLinearNote',
      'nwtGridTooltip', 'nwtViewFront', 'nwtViewBack', 'nwtShowWiring', 'nwtShowNumbers', 'nwtNumberSizeWrap', 'nwtNumberSize', 'nwtNumbersTooSmallHint', 'nwtZoomOut', 'nwtZoomIn', 'nwtZoomReset', 'nwtZoomLevel',
-     'nwtExportLog', 'nwtClearLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
+     'nwtExportLog', 'nwtClearLog', 'nwtUndoLog', 'nwtLogTable', 'nwtLogDetails', 'nwtDownloadManualXModel',
      'nwtRangeFrom', 'nwtRangeTo', 'nwtRangeOffset', 'nwtApplyRangeOffset', 'nwtRangeStatus',
      'nwtVendorSearch', 'nwtVendorRefresh', 'nwtVendorStatus', 'nwtVendorResults',
      'nwtVendorSelectedRow', 'nwtVendorSelectedLabel', 'nwtDownloadVendorXModel',
@@ -1297,6 +1305,7 @@
             note: note || ''
         };
         if (source) { entry.source = source; }
+        snapshotMismatchLogForUndo();
         mismatchLog.push(entry);
         renderLog();
         updateManualXModelButton();
@@ -1332,12 +1341,46 @@
 
     function renderLog() {
         var tbody = el.nwtLogTable.querySelector('tbody');
-        tbody.innerHTML = mismatchLog.map(function (e) {
+        tbody.innerHTML = mismatchLog.map(function (e, i) {
             var actualText = (typeof e.actualNode === 'number') ? ('Node ' + (e.actualNode + 1)) : '-';
             return '<tr><td>' + escapeHtml(e.time) + '</td><td>' + escapeHtml(e.model) + '</td><td>' +
                 e.node + '</td><td>' + escapeHtml(e.pos) + '</td><td>' + escapeHtml(e.channels) +
-                '</td><td>' + escapeHtml(actualText) + '</td><td>' + escapeHtml(e.note) + '</td></tr>';
+                '</td><td>' + escapeHtml(actualText) + '</td><td>' + escapeHtml(e.note) +
+                '</td><td><button class="nwtLogDeleteBtn" type="button" data-idx="' + i +
+                '" title="Delete this entry">&times;</button></td></tr>';
         }).join('');
+    }
+
+    // ---- Undo ---------------------------------------------------------
+    // A simple snapshot stack over the whole log, not a per-field diff -
+    // simpler to reason about and good enough for "oops, undo that" after
+    // any of the ways the log can change (one entry, a bulk range, a scan,
+    // a full clear).
+    var mismatchLogUndoStack = [];
+    var MISMATCH_UNDO_LIMIT = 25;
+
+    function snapshotMismatchLogForUndo() {
+        mismatchLogUndoStack.push(JSON.parse(JSON.stringify(mismatchLog)));
+        if (mismatchLogUndoStack.length > MISMATCH_UNDO_LIMIT) { mismatchLogUndoStack.shift(); }
+        el.nwtUndoLog.disabled = false;
+    }
+
+    function undoMismatchLog() {
+        if (!mismatchLogUndoStack.length) { return; }
+        mismatchLog = mismatchLogUndoStack.pop();
+        renderLog();
+        updateManualXModelButton();
+        drawGridCanvas();
+        el.nwtUndoLog.disabled = !mismatchLogUndoStack.length;
+    }
+
+    function deleteLogEntry(index) {
+        if (index < 0 || index >= mismatchLog.length) { return; }
+        snapshotMismatchLogForUndo();
+        mismatchLog.splice(index, 1);
+        renderLog();
+        updateManualXModelButton();
+        drawGridCanvas();
     }
 
     function exportLog() {
@@ -1388,6 +1431,7 @@
         // span, so re-applying a corrected offset over the same stretch
         // doesn't pile up stale duplicates. Entries from "Mark this node as
         // mismatched", a scan, or a range outside this span are untouched.
+        snapshotMismatchLogForUndo();
         mismatchLog = mismatchLog.filter(function (e) {
             return !(e.source === 'range' && e.model === state.modelName && e.node >= from && e.node <= to);
         });
@@ -2177,6 +2221,7 @@
     // source:'scan') rather than piling up duplicates; manually-added
     // entries are left alone.
     function logScanMismatches(layout) {
+        snapshotMismatchLogForUndo();
         mismatchLog = mismatchLog.filter(function (e) { return e.source !== 'scan'; });
         var cpn = currentCpn();
         var count = 0;
@@ -2522,7 +2567,20 @@
     el.nwtMarkMismatch.addEventListener('click', markMismatch);
     el.nwtLiveCorrectMode.addEventListener('change', toggleLiveCorrectMode);
     el.nwtExportLog.addEventListener('click', exportLog);
-    el.nwtClearLog.addEventListener('click', function () { mismatchLog = []; renderLog(); updateManualXModelButton(); drawGridCanvas(); });
+    el.nwtClearLog.addEventListener('click', function () {
+        if (!mismatchLog.length) { return; }
+        snapshotMismatchLogForUndo();
+        mismatchLog = [];
+        renderLog();
+        updateManualXModelButton();
+        drawGridCanvas();
+    });
+    el.nwtUndoLog.addEventListener('click', undoMismatchLog);
+    el.nwtLogTable.querySelector('tbody').addEventListener('click', function (evt) {
+        var btn = evt.target.closest('.nwtLogDeleteBtn');
+        if (!btn) { return; }
+        deleteLogEntry(parseInt(btn.dataset.idx, 10));
+    });
     el.nwtDownloadManualXModel.addEventListener('click', downloadManualXModel);
     el.nwtApplyRangeOffset.addEventListener('click', applyRangeOffset);
 
