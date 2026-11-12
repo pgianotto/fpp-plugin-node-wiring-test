@@ -456,9 +456,34 @@
     }
 
     // ---- Model list -------------------------------------------------
+    // FPP flags the strips it makes up from pixel-string descriptions as
+    // autoCreated: plain linear strips with no xLights shape, and on a controller
+    // they are usually the channels the outputs actually drive. They sit under the
+    // real models in their own group so the two are not mistaken for duplicates.
+    function modelOptionsHtml(entries) {
+        var real = [], auto = [];
+        entries.forEach(function (n) {
+            var name = (typeof n === 'string') ? n : (n.Name || n.name || '');
+            if (name === '') { return; }
+            ((n && typeof n === 'object' && n.autoCreated) ? auto : real).push(name);
+        });
+        function options(list) {
+            return list.map(function (name) {
+                return '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>';
+            }).join('');
+        }
+        if (!real.length || !auto.length) { return options(real.concat(auto)); }
+        return '<optgroup label="Models (xLights layout)">' + options(real) + '</optgroup>' +
+            '<optgroup label="Auto-created strips (no shape)">' + options(auto) + '</optgroup>';
+    }
+
     function loadModels() {
         el.nwtModel.innerHTML = '<option value="">Loading models...</option>';
-        apiGet('/api/models?simple=true').then(function (data) {
+        // The full list says which models are auto-created; the simple list is
+        // only names, so it is the fallback.
+        apiGet('/api/models').catch(function () {
+            return apiGet('/api/models?simple=true');
+        }).then(function (data) {
             var names = Array.isArray(data) ? data
                 : (Array.isArray(data.models) ? data.models
                 : (Array.isArray(data.Models) ? data.Models : []));
@@ -467,11 +492,7 @@
                 el.nwtModel.innerHTML = '<option value="">No models configured</option>';
                 return;
             }
-            el.nwtModel.innerHTML = '<option value="">Select a model...</option>' +
-                names.map(function (n) {
-                    var name = (typeof n === 'string') ? n : (n.Name || n.name || '');
-                    return '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>';
-                }).join('');
+            el.nwtModel.innerHTML = '<option value="">Select a model...</option>' + modelOptionsHtml(names);
         }).catch(function (err) {
             el.nwtModel.innerHTML = '<option value="">Error loading models</option>';
             setStatus('Error loading models: ' + err.message, false);
