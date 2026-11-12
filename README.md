@@ -13,7 +13,10 @@ kind of chase and eyeball it against the layout. This plugin does exactly
 that from the FPP web UI, using FPP's own built-in channel-test engine (no
 new network protocol, no extra daemon, nothing installed) so you can:
 
-- select any configured model from a dropdown,
+- select any configured model from a dropdown (your xLights-layout models first;
+  the plain strips FPP auto-creates from your pixel-string descriptions are in a
+  separate "Auto-created strips (no shape)" group, so they are not mistaken for
+  duplicates),
 - step through its nodes one at a time (or auto-play with an adjustable
   interval), jump straight to any node by typing its number, or click a node
   directly in the preview to light it,
